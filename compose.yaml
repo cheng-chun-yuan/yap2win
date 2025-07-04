@@ -1,8 +1,7 @@
 services:
   yap2win:
     build: .
-    image: "ghcr.io/chengchunyuan/yap2win-bot"
+    image: "ghcr.io/cheng-chun-yuan/yap2win-bot"
     platform: linux/amd64
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-    restart: unless-stopped
+      - TOKEN=${TOKEN}

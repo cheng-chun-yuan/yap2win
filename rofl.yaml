@@ -17,13 +17,13 @@ artifacts:
     compose: compose.yaml
 deployments:
   default:
-    app_id: rofl1qz7knstv59hkmku82q2ul68eh30vqtsvf58krtjk
+    app_id: rofl1qrlmjtqfjpc64s3wjmw93zlw8u5seacfws8epdlr
     network: testnet
     paratime: sapphire
     admin: albert
     trust_root:
-      height: 27354731
-      hash: c058df4abef4a1538592e33bffba14689500c0b1ed9536ad09c0549be6533664
+      height: 27355420
+      hash: faf57081975022717bab0fd5469fbf4eab4eba6c6724b3ddada9c01b07ef3308
     policy:
       quotes:
         pcs:
@@ -35,3 +35,6 @@ deployments:
         - any: {}
       fees: endorsing_node
       max_expiration: 3
+    secrets:
+      - name: TOKEN
+        value: pGJwa1ggisyvKKwB2ROkscuHWmwbzmtpGNX46Udc9SyzR5RXHwdkbmFtZVWI3bPxd7mMVQM1CEyyqaKtYkjiilVlbm9uY2VPzmBESVvOQszC1ipYhphoZXZhbHVlWD5K+F/Hoq3lFQn08SFAgWPBMHKjeUTR4/WRIJGACr2N57vTQPtHoGfq/KlBtzOk4i3hAGhXbj+MPQ+DpTH4kA==
