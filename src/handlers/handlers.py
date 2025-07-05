@@ -3,6 +3,7 @@ Command handlers module for the Telegram bot.
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from telegram import Update
@@ -16,6 +17,7 @@ from config.config import (
 )
 from services.data_storage import data_storage
 from services.reward_system import reward_system
+from services.rofl_service import rofl_service
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +386,105 @@ class UserHandlers:
         
         logger.info(f"User {user.first_name} (ID: {user.id}) requested results in {chat.title}")
         print(f"🏆 User {user.first_name} requested results in {chat.title}")
+
+
+class ROFLHandlers:
+    """Handles ROFL wallet-related commands."""
+    
+    @staticmethod
+    async def new_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Admin command to create a new ROFL wallet."""
+        user = update.effective_user
+        
+        # Verify admin status
+        if not await AdminHandlers.is_admin(update, context):
+            await update.message.reply_text("❌ You are not authorized to use this command.")
+            return
+        
+        try:
+            # Generate unique pool ID
+            pool_id = f"pool_{int(time.time())}"
+            
+            # Generate wallet using ROFL
+            wallet_info = rofl_service.generate_wallet(pool_id)
+            
+            # Store wallet info securely
+            data_storage.store_wallet_info(wallet_info)
+            
+            # Display funding information
+            message = f"""
+🏦 **New ROFL Wallet Created**
+
+💰 **Wallet Address**: `{wallet_info['address']}`
+🔗 **Network**: Oasis Sapphire
+📊 **Pool ID**: `{wallet_info['pool_id']}`
+🆔 **ROFL App ID**: `{wallet_info['app_id']}`
+
+💡 **Instructions**:
+1. Send funds to the wallet address above
+2. Use `/bot` to monitor balance
+3. This wallet is secured by ROFL for maximum security
+
+⚠️ **Security**: This wallet is managed by ROFL with attested execution
+            """
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+            logger.info(f"Admin {user.first_name} (ID: {user.id}) created new ROFL wallet")
+            print(f"🏦 Admin {user.first_name} created new ROFL wallet: {wallet_info['address']}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create ROFL wallet: {e}")
+            await update.message.reply_text(f"❌ Failed to create wallet: {str(e)}")
+    
+    @staticmethod
+    async def bot_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Display bot wallet information and balance."""
+        user = update.effective_user
+        
+        try:
+            # Get latest wallet info from storage
+            wallet_info = data_storage.get_latest_wallet_info()
+            
+            if not wallet_info:
+                await update.message.reply_text("❌ No wallet found. Ask an admin to create one with `/new_bot`.")
+                return
+            
+            # Get current balance
+            try:
+                balance = rofl_service.get_wallet_balance(wallet_info['address'])
+                balance_text = f"{balance:.6f} ROSE"
+            except Exception as e:
+                logger.error(f"Failed to get balance: {e}")
+                balance_text = "Unable to fetch balance"
+            
+            # Format creation time
+            from datetime import datetime
+            created_time = datetime.fromtimestamp(wallet_info['created_at']).strftime('%Y-%m-%d %H:%M:%S')
+            
+            message = f"""
+🤖 **Bot Wallet Information**
+
+📍 **Address**: `{wallet_info['address']}`
+💎 **Balance**: {balance_text}
+📊 **Pool ID**: `{wallet_info['pool_id']}`
+🆔 **ROFL App ID**: `{wallet_info['app_id']}`
+⏰ **Created**: {created_time}
+
+💡 **To fund this wallet**:
+Send ROSE tokens to the address above on Oasis Sapphire network.
+
+🔒 **Security**: This wallet is secured by ROFL with attested execution.
+            """
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+            logger.info(f"User {user.first_name} (ID: {user.id}) requested bot wallet info")
+            print(f"🤖 User {user.first_name} requested bot wallet info")
+            
+        except Exception as e:
+            logger.error(f"Failed to get bot wallet info: {e}")
+            await update.message.reply_text(f"❌ Failed to get wallet information: {str(e)}")
 
 
 class BotHandlers:

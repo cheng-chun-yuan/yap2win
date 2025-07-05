@@ -2,3 +2,6 @@ python-telegram-bot
 python-dotenv
 deepeval
 openai
+eth-account
+web3
+requests

@@ -118,6 +118,33 @@ class DataStorage:
     def get_total_users_count(self) -> int:
         """Get count of users with points."""
         return len(self.user_points)
+    
+    def store_wallet_info(self, wallet_info: Dict[str, Any]) -> None:
+        """Store ROFL wallet information."""
+        if not hasattr(self, 'wallet_info'):
+            self.wallet_info = {}
+        self.wallet_info[wallet_info['pool_id']] = wallet_info
+    
+    def get_wallet_info(self, pool_id: str) -> Optional[Dict[str, Any]]:
+        """Get wallet information by pool ID."""
+        if not hasattr(self, 'wallet_info'):
+            return None
+        return self.wallet_info.get(pool_id)
+    
+    def get_latest_wallet_info(self) -> Optional[Dict[str, Any]]:
+        """Get the most recently created wallet information."""
+        if not hasattr(self, 'wallet_info') or not self.wallet_info:
+            return None
+        
+        # Return the wallet with the highest created_at timestamp
+        latest_wallet = max(self.wallet_info.values(), key=lambda x: x.get('created_at', 0))
+        return latest_wallet
+    
+    def get_all_wallet_info(self) -> Dict[str, Dict[str, Any]]:
+        """Get all wallet information."""
+        if not hasattr(self, 'wallet_info'):
+            return {}
+        return self.wallet_info.copy()
 
 
 # Global data storage instance

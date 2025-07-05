@@ -2,7 +2,7 @@ import logging
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ChatMemberHandler, ConversationHandler
 
 from config.config import TOKEN, CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT, ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME
-from handlers.handlers import AdminHandlers, UserHandlers, BotHandlers
+from handlers.handlers import AdminHandlers, UserHandlers, BotHandlers, ROFLHandlers
 from handlers.reward_handlers import RewardHandlers
 from handlers.message_handler import message_processor
 
@@ -32,6 +32,10 @@ app.add_handler(CommandHandler("leaderboard", UserHandlers.leaderboard))
 app.add_handler(CommandHandler("reward", UserHandlers.reward))
 app.add_handler(CommandHandler("rewards", UserHandlers.reward))  # Alias for /reward
 app.add_handler(CommandHandler("result", UserHandlers.result))
+
+# Add ROFL wallet commands
+app.add_handler(CommandHandler("new_bot", ROFLHandlers.new_bot))
+app.add_handler(CommandHandler("bot", ROFLHandlers.bot_info))
 
 # Add conversation handler for set command
 set_reward_handler = ConversationHandler(
