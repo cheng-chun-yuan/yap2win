@@ -486,6 +486,34 @@ Send ROSE tokens to the address above on Oasis Sapphire network.
             logger.error(f"Failed to get bot wallet info: {e}")
             await update.message.reply_text(f"❌ Failed to get wallet information: {str(e)}")
 
+    @staticmethod
+    async def test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Test command to get ROFL app ID."""
+        user = update.effective_user
+        
+        try:
+            # Get app ID directly from ROFL service
+            app_id = rofl_service.get_app_id()
+            
+            message = f"""
+🧪 **ROFL App ID Test**
+
+🆔 **App ID**: `{app_id}`
+🔗 **Status**: {'✅ Connected' if app_id != 'unknown' else '❌ Not Connected'}
+⏰ **Timestamp**: {int(time.time())}
+
+💡 **This command tests the ROFL service connection and retrieves the current app identifier.**
+            """
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+            
+            logger.info(f"User {user.first_name} (ID: {user.id}) tested ROFL app ID: {app_id}")
+            print(f"🧪 User {user.first_name} tested ROFL app ID: {app_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to get ROFL app ID: {e}")
+            await update.message.reply_text(f"❌ Failed to get ROFL app ID: {str(e)}")
+
 
 class BotHandlers:
     """Handles bot-related events."""

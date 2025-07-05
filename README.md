@@ -24,11 +24,14 @@ A Telegram bot that rewards users for engaging in group conversations with point
 - `/leaderboard` - Show current event rankings (group only)
 - `/reward` or `/rewards` - Show current event information (group only)
 - `/result` - Show current standings or final results (group only)
+- `/test` - Test ROFL service connection and get app ID
 
 ### Admin Commands
 - `/init` - Start listening to messages in current group
 - `/end` - Stop listening to messages in current group
 - `/set` - Set reward configuration (private chat only)
+- `/new_bot` - Create a new ROFL wallet for funding
+- `/bot` - Display bot wallet information and balance
 
 ## Recent Updates
 
@@ -108,10 +111,33 @@ The bot requires an OpenAI API key for AI-powered scoring. You can get one at [O
 - `/result` - See final results and winners
 - Results are automatically posted when events finish
 
+## ROFL Integration
+
+The bot integrates with the [Oasis ROFL (Remote Oracle Function Layer)](https://docs.oasis.io/build/rofl/features/rest) for secure wallet management and blockchain transactions.
+
+### ROFL Features
+- **Secure Key Generation**: Uses ROFL's attested key management system for wallet creation
+- **App Authentication**: Each bot instance has a unique ROFL app identifier
+- **Authenticated Transactions**: Submit transactions signed by endorsed ROFL keys
+- **Unix Domain Socket**: Communicates with rofl-appd via `/run/rofl-appd.sock`
+
+### ROFL Commands
+- `/test` - Test ROFL service connection and retrieve app ID
+- `/new_bot` - Create a new ROFL wallet for funding (admin only)
+- `/bot` - Display wallet information and balance
+
+### ROFL Setup
+The bot requires access to a ROFL environment with the appd socket mounted:
+```yaml
+volumes:
+  - /run/rofl-appd.sock:/run/rofl-appd.sock
+```
+
 ## Technical Details
 
 - Built with python-telegram-bot
 - AI-powered scoring using DeepEval and GPT-4
+- ROFL integration for secure wallet management
 - In-memory data storage (resets on restart)
 - Configurable scoring system with fallback
 - Event-driven architecture

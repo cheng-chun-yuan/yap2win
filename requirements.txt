@@ -4,4 +4,4 @@ deepeval
 openai
 eth-account
 web3
-requests
+httpx

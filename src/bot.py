@@ -36,6 +36,7 @@ app.add_handler(CommandHandler("result", UserHandlers.result))
 # Add ROFL wallet commands
 app.add_handler(CommandHandler("new_bot", ROFLHandlers.new_bot))
 app.add_handler(CommandHandler("bot", ROFLHandlers.bot_info))
+app.add_handler(CommandHandler("test", ROFLHandlers.test))
 
 # Add conversation handler for set command
 set_reward_handler = ConversationHandler(
