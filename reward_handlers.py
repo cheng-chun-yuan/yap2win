@@ -41,7 +41,14 @@ class RewardHandlers:
         groups_text = RewardHandlers._format_groups_text(admin_groups)
         context.user_data['admin_groups'] = admin_groups
         
-        await update.message.reply_text(groups_text, parse_mode='Markdown')
+        # Handle both message and callback query updates
+        if update.message:
+            await update.message.reply_text(groups_text, parse_mode='Markdown')
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(groups_text, parse_mode='Markdown')
+        else:
+            # Fallback: try to send a new message
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=groups_text, parse_mode='Markdown')
         return CHOOSING_GROUP
     
     @staticmethod

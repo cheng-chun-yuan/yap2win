@@ -73,22 +73,32 @@ HELP_TEXT = """
 • `/hello` - Get a greeting from the bot
 • `/status` - Show your points by group
 • `/status <group_name>` - Show your points in specific group
+• `/leaderboard` - Show current event rankings (group only)
+• `/reward` or `/rewards` - Show current event information (group only)
+• `/result` - Show current standings or final results (group only)
 
 👑 Admin Commands (Group Admins Only):
-• `/start` - Start listening to messages in current group
-• `/start <group_id>` - Start listening to messages in specific group
+• `/init` - Start listening to messages in current group
+• `/init <group_id>` - Start listening to messages in specific group
 • `/end` - Stop listening to messages in current group
 • `/end <group_id>` - Stop listening to messages in specific group
-• `/set_reward` - Set reward configuration (private chat only)
+• `/set` - Set reward configuration (private chat only)
+
+🏆 Event Commands:
+• `/leaderboard` - View current rankings and points
+• `/reward` or `/rewards` - View event details, rewards, and time remaining
+• `/result` - View current standings (during event) or final results (after event)
 
 ℹ️ How to use:
 1. Add me to your group(s)
 2. Make sure I have admin permissions (recommended)
-3. Group admins can use `/start` to activate message responses
-4. Use `/start <group_id>` to activate listening for a specific group
-5. The bot will only respond to messages in groups where listening is active
-6. Use `/status` to check your points across all groups
-7. Use `/set_reward` in private chat to configure rewards
+3. Group admins can use `/init` to activate message responses
+4. Use `/init <group_id>` to activate listening for a specific group
+5. The bot will always track points and send notifications in all groups
+6. Event participation only happens in groups where listening is active
+7. Use `/status` to check your points across all groups
+8. Use `/set` in private chat to configure rewards
+9. Use `/leaderboard`, `/reward`, or `/result` to check event progress
 
 💡 Getting Group ID:
 • In your group, send any message and check the bot logs for the group ID

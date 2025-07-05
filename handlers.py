@@ -89,7 +89,7 @@ class AdminHandlers:
                                         user: Any, chat: Any) -> None:
         """Handle start command in current group."""
         if chat.type not in GROUP_CHAT_TYPES:
-            await update.message.reply_text("❌ Please provide a group ID or use this command in a group chat.\n\nUsage: `/start <group_id>`")
+            await update.message.reply_text("❌ Please provide a group ID or use this command in a group chat.\n\nUsage: `/init <group_id>`")
             return
         
         if not await AdminHandlers.is_admin(update, context):
@@ -233,6 +233,157 @@ class UserHandlers:
         
         logger.info(f"User {user.first_name} (ID: {user.id}) requested help")
         print(f"❓ User {user.first_name} (ID: {user.id}) requested help")
+    
+    @staticmethod
+    async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show current leaderboard for active events in the group."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in groups where bot is listening
+        if chat.type not in GROUP_CHAT_TYPES or not data_storage.is_listening_to_group(chat.id):
+            await update.message.reply_text("❌ This command only works in groups where the bot is listening.")
+            return
+        
+        # Check event status
+        event_status = reward_system.get_event_status(chat.id)
+        
+        if event_status == "active":
+            # Get current standings using the new method
+            standings = reward_system.get_current_standings(chat.id)
+            await update.message.reply_text(standings, parse_mode='Markdown')
+        elif event_status == "not_started":
+            config = reward_system.get_reward_config(chat.id)
+            start_time = config.get('start_time')
+            await update.message.reply_text(
+                f"⏰ **Event Not Started Yet**\n\n"
+                f"Event: {config.get('group_name', 'Unknown Group')}\n"
+                f"Type: {config.get('type', 'unknown').title()}\n"
+                f"Total Reward: {config.get('total_amount', 0)}\n\n"
+                f"Event will begin at: {start_time.strftime(DATE_FORMAT)}\n"
+                f"Use /result to see when the event starts!"
+            )
+        elif event_status == "finished":
+            await update.message.reply_text(
+                "🏁 **Event Finished**\n\n"
+                "This event has already finished. Use /result to see the final results!"
+            )
+        else:
+            await update.message.reply_text("🏁 No active events in this group. Ask an admin to start a reward event!")
+        
+        logger.info(f"User {user.first_name} (ID: {user.id}) requested leaderboard in {chat.title}")
+        print(f"📊 User {user.first_name} requested leaderboard in {chat.title}")
+    
+    @staticmethod
+    async def reward(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show current reward event information."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in groups where bot is listening
+        if chat.type not in GROUP_CHAT_TYPES or not data_storage.is_listening_to_group(chat.id):
+            await update.message.reply_text("❌ This command only works in groups where the bot is listening.")
+            return
+        
+        # Check event status
+        event_status = reward_system.get_event_status(chat.id)
+        
+        if event_status == "active":
+            # Get current standings using the new method
+            standings = reward_system.get_current_standings(chat.id)
+            await update.message.reply_text(standings, parse_mode='Markdown')
+        elif event_status == "not_started":
+            config = reward_system.get_reward_config(chat.id)
+            start_time = config.get('start_time')
+            await update.message.reply_text(
+                f"⏰ **Event Not Started Yet**\n\n"
+                f"Event: {config.get('group_name', 'Unknown Group')}\n"
+                f"Type: {config.get('type', 'unknown').title()}\n"
+                f"Total Reward: {config.get('total_amount', 0)}\n\n"
+                f"Event will begin at: {start_time.strftime(DATE_FORMAT)}\n"
+                f"Use /result to see when the event starts!"
+            )
+        elif event_status == "finished":
+            await update.message.reply_text(
+                "🏁 **Event Finished**\n\n"
+                "This event has already finished. Use /result to see the final results!"
+            )
+        else:
+            await update.message.reply_text("🏁 No active events in this group. Ask an admin to start a reward event!")
+        
+        logger.info(f"User {user.first_name} (ID: {user.id}) requested reward info in {chat.title}")
+        print(f"🏆 User {user.first_name} requested reward info in {chat.title}")
+    
+    @staticmethod
+    async def result(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show current standings or final results for events."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in groups where bot is listening
+        if chat.type not in GROUP_CHAT_TYPES or not data_storage.is_listening_to_group(chat.id):
+            await update.message.reply_text("❌ This command only works in groups where the bot is listening.")
+            return
+        
+        # Check if there's an event configuration
+        config = reward_system.get_reward_config(chat.id)
+        if not config:
+            await update.message.reply_text("🏁 No events configured in this group. Ask an admin to start a reward event!")
+            return
+        
+        # Get detailed event status
+        event_status = reward_system.get_event_status(chat.id)
+        
+        if event_status == "active":
+            # Show current standings
+            print("Event is active. Showing current standings")
+            standings = reward_system.get_current_standings(chat.id)
+            await update.message.reply_text(standings, parse_mode='Markdown')
+        elif event_status == "finished":
+            # Show final results
+            print("Event finished. Showing final results")
+            results = reward_system.get_event_results(chat.id)
+            await update.message.reply_text(results)
+        elif event_status == "not_started":
+            # Event hasn't started yet
+            start_time = config.get('start_time')
+            current_time = datetime.now()
+            time_until_start = start_time - current_time
+            
+            hours = int(time_until_start.total_seconds() // 3600)
+            minutes = int((time_until_start.total_seconds() % 3600) // 60)
+            
+            if hours > 24:
+                days = hours // 24
+                hours = hours % 24
+                time_text = f"{days}d {hours}h {minutes}m"
+            elif hours > 0:
+                time_text = f"{hours}h {minutes}m"
+            else:
+                time_text = f"{minutes}m"
+            
+            await update.message.reply_text(
+                f"⏰ **Event Not Started Yet**\n\n"
+                f"Event: {config.get('group_name', 'Unknown Group')}\n"
+                f"Type: {config.get('type', 'unknown').title()}\n"
+                f"Total Reward: {config.get('total_amount', 0)}\n"
+                f"Starts in: {time_text}\n\n"
+                f"Event will begin at: {start_time.strftime(DATE_FORMAT)}"
+            )
+        elif event_status == "time_expired":
+            # Event time has expired but status not updated yet
+            await update.message.reply_text(
+                f"🏁 **Event Time Expired**\n\n"
+                f"Event: {config.get('group_name', 'Unknown Group')}\n"
+                f"Type: {config.get('type', 'unknown').title()}\n"
+                f"Total Reward: {config.get('total_amount', 0)}\n\n"
+                f"Final results will be announced soon!"
+            )
+        else:
+            await update.message.reply_text("🏁 No active events in this group. Ask an admin to start a reward event!")
+        
+        logger.info(f"User {user.first_name} (ID: {user.id}) requested results in {chat.title}")
+        print(f"🏆 User {user.first_name} requested results in {chat.title}")
 
 
 class BotHandlers:

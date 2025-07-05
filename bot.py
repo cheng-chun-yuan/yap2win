@@ -24,14 +24,18 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 # Add command handlers
 app.add_handler(CommandHandler("help", user_handlers.help_command))
-app.add_handler(CommandHandler("start", admin_handlers.start))
+app.add_handler(CommandHandler("init", admin_handlers.start))
 app.add_handler(CommandHandler("end", admin_handlers.end))
 app.add_handler(CommandHandler("hello", user_handlers.hello))
 app.add_handler(CommandHandler("status", user_handlers.status))
+app.add_handler(CommandHandler("leaderboard", user_handlers.leaderboard))
+app.add_handler(CommandHandler("reward", user_handlers.reward))
+app.add_handler(CommandHandler("rewards", user_handlers.reward))  # Alias for /reward
+app.add_handler(CommandHandler("result", user_handlers.result))
 
-# Add conversation handler for set_reward
+# Add conversation handler for set command
 set_reward_handler = ConversationHandler(
-    entry_points=[CommandHandler("set_reward", reward_handlers.set_reward)],
+    entry_points=[CommandHandler("set", reward_handlers.set_reward)],
     states={
         CHOOSING_GROUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, reward_handlers.choose_group)],
         CHOOSING_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reward_handlers.choose_type)],

@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any
 from telegram import Update
 from telegram.ext import ContextTypes
+from datetime import datetime
 
 from config import GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE
 from data_storage import data_storage
@@ -101,11 +102,7 @@ class MessageProcessor:
             await MessageProcessor._handle_unverified_user(context, user_id, chat_id)
             return
         
-        # Only process messages from groups that are being listened to
-        if not data_storage.is_listening_to_group(chat_id):
-            print(f'Skipping message from group {chat_id} - not in listening groups')
-            return
-        
+        # Always process messages and send notifications, regardless of listening status
         try:
             await MessageProcessor._process_and_score_message(update, context, user, chat, text)
         except Exception as error:
@@ -160,8 +157,9 @@ class MessageProcessor:
         logger.info(f"User {user.first_name} (ID: {user.id}) sent message: {text}")
         print(f"💬 User {user.first_name} (ID: {user.id}) sent: {text}")
         
-        # Check if any events have finished
-        await MessageProcessor._check_finished_events(context)
+        # Only check for finished events if the group is being listened to
+        if data_storage.is_listening_to_group(chat_id):
+            await MessageProcessor._check_finished_events(context)
     
     @staticmethod
     async def _handle_positive_score(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -171,18 +169,38 @@ class MessageProcessor:
         chat_id = chat.id
         group_name = chat.title if chat.title else 'Unknown Group'
         
-        # Update user points
+        # Update user points (always add to general points)
         data_storage.add_user_points(user_id, chat_id, score, group_name)
         
         current_points = data_storage.get_user_points_in_group(user_id, chat_id)
         print(f"📊 Updated points for user {user_id} in group {group_name}: {current_points:.2f}")
         
-        # Track participants for active events
-        if reward_system.is_event_active(chat_id):
-            reward_system.add_participant_score(chat_id, user_id, score, user.username, user.first_name)
-            print(f"🎯 Event participant {user.first_name} earned {score:.2f} points in {group_name}")
+        # Only track event participation if the group is being listened to
+        if data_storage.is_listening_to_group(chat_id):
+            # Check if there's an active event before adding event points
+            if reward_system.is_event_active(chat_id):
+                reward_system.add_participant_score(chat_id, user_id, score, user.username, user.first_name)
+                print(f"🎯 Event participant {user.first_name} earned {score:.2f} points in {group_name}")
+            else:
+                # Check if there's an event configuration but it's not active
+                config = reward_system.get_reward_config(chat_id)
+                if config:
+                    current_time = datetime.now()
+                    start_time = config.get('start_time')
+                    end_time = config.get('end_time')
+                    
+                    if start_time and current_time < start_time:
+                        print(f"⏰ Event not started yet for group {group_name} (starts at {start_time})")
+                    elif end_time and current_time > end_time:
+                        print(f"🏁 Event already finished for group {group_name} (ended at {end_time})")
+                    else:
+                        print(f"⚠️ Event not active for group {group_name} (status: {config.get('status')})")
+                else:
+                    print(f"📝 No event configured for group {group_name}")
+        else:
+            print(f"📝 Group {group_name} not being listened to - points tracked but no event participation")
         
-        # Send score notification
+        # Send score notification (always send, regardless of listening status)
         await MessageProcessor._send_score_notification(update, context, user, score, group_name)
     
     @staticmethod
