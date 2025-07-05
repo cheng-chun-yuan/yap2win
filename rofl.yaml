@@ -21,6 +21,7 @@ deployments:
     network: testnet
     paratime: sapphire
     admin: albert
+    oci_repository: rofl.sh/a68981fc-eeda-4fb6-92dd-efc68a2875f2:1751708036
     trust_root:
       height: 27355420
       hash: faf57081975022717bab0fd5469fbf4eab4eba6c6724b3ddada9c01b07ef3308
@@ -30,7 +31,9 @@ deployments:
           tcb_validity_period: 30
           min_tcb_evaluation_data_number: 18
           tdx: {}
-      enclaves: []
+      enclaves:
+        - id: y9rHNzuJiiFO2A0HQ8WJyO4nz61askdvf/Qo+x1FCg4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: JExt/LkB+vDfJ5VpIcLTiNWp6lLbyDTR6zlb5YX/XigAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
@@ -38,3 +41,10 @@ deployments:
     secrets:
       - name: TOKEN
         value: pGJwa1ggisyvKKwB2ROkscuHWmwbzmtpGNX46Udc9SyzR5RXHwdkbmFtZVWI3bPxd7mMVQM1CEyyqaKtYkjiilVlbm9uY2VPzmBESVvOQszC1ipYhphoZXZhbHVlWD5K+F/Hoq3lFQn08SFAgWPBMHKjeUTR4/WRIJGACr2N57vTQPtHoGfq/KlBtzOk4i3hAGhXbj+MPQ+DpTH4kA==
+      - name: OPENAI_API_KEY
+        value: pGJwa1ggW6jFp8u5eAbrO1WEWu6MAFY8aLyjLGPu0XjHSQ5JCGxkbmFtZVgeCrvdh1CepnNH1BVqVap+saTLXwLfbIKO3fUubOpMZW5vbmNlT1roYVK8xnsvgCFsQPLFCmV2YWx1ZVi0RoRvNG2Z0leX102gXkCAtnijjYXOCHAWr51bP9x6XmGuZbfivb9f/ybJm/gefzMZJa+LAsjDFUqNGqJhi43w4T7wa5VPXYg3vx6tMX6pceFRsxQlwm4MTE69TlhsrFjzt+BBX/EVRMhSLuqBGGIOwEUrvhvVbm+aYOjWabF7CSjZsomFr+r0fF4TbplZ1DZ3nZF1NVtnafGHGL/OVXOZyMLcKDtsfbBCM2IMJY3xw3wKVurp
+    machines:
+      default:
+        provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
+        offer: playground_short
+        id: "0000000000000134"
