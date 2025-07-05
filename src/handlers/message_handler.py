@@ -82,6 +82,12 @@ class MessageProcessor:
             elif context.user_data.get('verifying_for_group'):
                 await VerificationHandlers.handle_verification(update, context)
                 return
+            elif context.user_data.get('awaiting_group_selection_for_verification'):
+                await VerificationHandlers.handle_group_selection_for_verification(update, context)
+                return
+            elif context.user_data.get('collecting_verification_data_for_group'):
+                await VerificationHandlers.handle_verification_data_collection(update, context)
+                return
             elif verification.is_verification_message(text):
                 response = verification.verify_user(user_id)
                 await message.reply_text(response)

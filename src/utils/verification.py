@@ -4,6 +4,7 @@ User verification module for bot access control.
 
 from typing import Dict, Set, Optional, Any
 from config.config import VERIFICATION_MESSAGE, VERIFICATION_RESPONSE
+from services.nft_service import nft_service
 
 
 class VerificationRule:
@@ -101,7 +102,14 @@ class UserVerification:
         
         # Check NFT holder requirement
         if rule.nft_holder is not None:
-            if user_data.get('nft_holder', False) != rule.nft_holder:
+            wallet_address = user_data.get('address') or self.get_user_address(user_id)
+            if wallet_address:
+                # Check actual NFT balance using blockchain
+                nft_verified = nft_service.verify_nft_requirement(wallet_address, rule.nft_holder)
+                if not nft_verified:
+                    return False
+            else:
+                # No wallet address provided, fail NFT verification
                 return False
         
         return True
@@ -186,6 +194,39 @@ class UserVerification:
     def set_user_address(self, user_id: int, address: str) -> None:
         """Set user's wallet address."""
         self.user_addresses[user_id] = address
+    
+    def verify_user_nft(self, user_id: int, nft_type: str) -> bool:
+        """
+        Verify if user holds required NFTs.
+        
+        Args:
+            user_id: User's ID
+            nft_type: Required NFT type ('penguin' or 'ape')
+            
+        Returns:
+            True if user holds required NFTs, False otherwise
+        """
+        wallet_address = self.get_user_address(user_id)
+        if not wallet_address:
+            return False
+        
+        return nft_service.verify_nft_requirement(wallet_address, nft_type)
+    
+    def get_user_nft_summary(self, user_id: int) -> Optional[Dict[str, int]]:
+        """
+        Get summary of user's NFT holdings.
+        
+        Args:
+            user_id: User's ID
+            
+        Returns:
+            Dictionary with NFT types and balances, or None if no wallet address
+        """
+        wallet_address = self.get_user_address(user_id)
+        if not wallet_address:
+            return None
+        
+        return nft_service.get_nft_summary(wallet_address)
 
 
 # Global verification instance

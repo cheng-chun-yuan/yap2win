@@ -845,6 +845,27 @@ class VerificationHandlers:
                 # User not in group or error accessing group
                 continue
         
+        # Also check listening groups in case user is in groups without rules yet
+        listening_groups = data_storage.get_listening_groups()
+        for group_id in listening_groups:
+            try:
+                # Check if user is member of this group and not already in list
+                if not any(g[0] == group_id for g in user_groups):
+                    chat_member = await context.bot.get_chat_member(group_id, user_id)
+                    if chat_member.status in ['member', 'administrator', 'creator']:
+                        # Get group info
+                        try:
+                            group_chat = await context.bot.get_chat(group_id)
+                            group_name = group_chat.title
+                        except Exception:
+                            group_name = f"Group {group_id}"
+                        
+                        has_rules = verification.has_group_rule(group_id)
+                        user_groups.append((group_id, group_name, has_rules))
+            except Exception:
+                # User not in group or error accessing group
+                continue
+        
         return user_groups
     
     @staticmethod
@@ -945,8 +966,11 @@ class VerificationHandlers:
                 verification.advance_verification_step(user.id, 'age')
                 await update.message.reply_text(f"What is your age? (Must be at least {rule.age})")
             elif rule.nft_holder is not None:
-                verification.advance_verification_step(user.id, 'nft')
-                await update.message.reply_text(f"Do you hold NFTs? (Must be {'Yes' if rule.nft_holder else 'No'})")
+                verification.advance_verification_step(user.id, 'wallet_address')
+                await update.message.reply_text(f"Please provide your wallet address to verify {rule.nft_holder} NFT ownership:")
+            elif rule.collect_address:
+                verification.advance_verification_step(user.id, 'wallet_address')
+                await update.message.reply_text("Please provide your wallet address for future rewards:")
             else:
                 await VerificationHandlers._complete_verification(update, context, user)
         
@@ -968,31 +992,14 @@ class VerificationHandlers:
             
             # Move to next step
             if rule.nft_holder is not None:
-                verification.advance_verification_step(user.id, 'nft')
-                await update.message.reply_text(f"Do you hold NFTs? (Must be {'Yes' if rule.nft_holder else 'No'})")
+                verification.advance_verification_step(user.id, 'wallet_address')
+                await update.message.reply_text(f"Please provide your wallet address to verify {rule.nft_holder} NFT ownership:")
             elif rule.collect_address:
                 verification.advance_verification_step(user.id, 'wallet_address')
                 await update.message.reply_text("Please provide your wallet address for future rewards:")
             else:
                 await VerificationHandlers._complete_verification(update, context, user)
         
-        elif step == 'nft':
-            # Handle NFT input (mock version - accept if user enters their name)
-            # Mock version: accept if user enters their first name
-            if text.lower() == user.first_name.lower():
-                nft_answer = rule.nft_holder  # Set to required value
-                verification.update_verification_data(user.id, 'nft_holder', nft_answer)
-                await update.message.reply_text("✅ NFT status verified!")
-            else:
-                await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
-                return
-            
-            # Complete verification or ask for address
-            if rule.collect_address:
-                verification.advance_verification_step(user.id, 'wallet_address')
-                await update.message.reply_text("Please provide your wallet address for future rewards:")
-            else:
-                await VerificationHandlers._complete_verification(update, context, user)
         
         elif step == 'wallet_address':
             # Handle wallet address input
@@ -1003,8 +1010,64 @@ class VerificationHandlers:
                 await update.message.reply_text("❌ Please enter a valid wallet address:")
                 return
             
+            # Validate Ethereum address format
+            try:
+                from web3 import Web3
+                Web3.to_checksum_address(address)
+            except Exception:
+                await update.message.reply_text(
+                    "❌ Invalid Ethereum address format.\n\n"
+                    "Please ensure your address:\n"
+                    "• Starts with '0x'\n"
+                    "• Is exactly 42 characters long\n"
+                    "• Contains only valid hexadecimal characters\n\n"
+                    "Example: `0x742d35Cc6634C0532925a3b8D499d12A13639D36`"
+                )
+                return
+            
             verification.update_verification_data(user.id, 'address', address)
             await update.message.reply_text("✅ Wallet address recorded!")
+            
+            # If NFT verification is required, check it now
+            if rule.nft_holder is not None:
+                await update.message.reply_text(f"🔍 Checking {rule.nft_holder} NFT ownership on Ethereum mainnet...")
+                
+                try:
+                    # Import NFT service
+                    from services.nft_service import nft_service
+                    
+                    # Check NFT ownership
+                    nft_verified = nft_service.verify_nft_requirement(address, rule.nft_holder)
+                    
+                    if nft_verified:
+                        await update.message.reply_text(f"✅ {rule.nft_holder.title()} NFT ownership verified on-chain!")
+                        verification.update_verification_data(user.id, 'nft_holder', rule.nft_holder)
+                    else:
+                        # Show NFT summary for debugging
+                        nft_summary = nft_service.get_nft_summary(address)
+                        summary_text = "\n".join([f"• {nft.title()}: {count}" for nft, count in nft_summary.items()])
+                        
+                        # Get contract info for better error message
+                        contract_info = nft_service.get_contract_info(rule.nft_holder)
+                        contract_name = contract_info['name'] if contract_info else f"{rule.nft_holder.title()} NFT"
+                        contract_address = contract_info['address'] if contract_info else "unknown"
+                        
+                        await update.message.reply_text(
+                            f"❌ No {rule.nft_holder} NFTs found in your wallet.\n\n"
+                            f"**Required:** {contract_name}\n"
+                            f"**Contract:** `{contract_address}`\n\n"
+                            f"**Your NFT holdings:**\n{summary_text}\n\n"
+                            f"Please ensure your wallet contains at least one {rule.nft_holder} NFT."
+                        )
+                        return
+                        
+                except Exception as e:
+                    logger.error(f"Error during NFT verification: {e}")
+                    await update.message.reply_text(
+                        f"⚠️ Unable to verify {rule.nft_holder} NFT ownership due to blockchain connectivity issues.\n\n"
+                        f"Please try again later or contact support if the issue persists."
+                    )
+                    return
             
             # Complete verification
             await VerificationHandlers._complete_verification(update, context, user)
@@ -1025,8 +1088,8 @@ class VerificationHandlers:
             verification.advance_verification_step(user.id, 'age')
             await update.message.reply_text(f"What is your age? (Must be at least {rule.age})")
         elif rule.nft_holder is not None:
-            verification.advance_verification_step(user.id, 'nft')
-            await update.message.reply_text(f"Do you hold NFTs? (Must be {'Yes' if rule.nft_holder else 'No'})")
+            verification.advance_verification_step(user.id, 'wallet_address')
+            await update.message.reply_text(f"Please provide your wallet address to verify {rule.nft_holder} NFT ownership:")
         elif rule.collect_address:
             verification.advance_verification_step(user.id, 'wallet_address')
             await update.message.reply_text("Please provide your wallet address for future rewards:")
@@ -1073,6 +1136,146 @@ class VerificationHandlers:
         print(f"🔍 User {user.first_name} verification: {'passed' if passed else 'failed'}")
     
     @staticmethod
+    async def _show_verification_help_with_groups(update: Update, context: ContextTypes.DEFAULT_TYPE, user: Any) -> None:
+        """Show verification help with available groups."""
+        # Get groups the user is in
+        user_groups = await VerificationHandlers._get_user_groups_with_rules(context, user.id)
+        
+        if not user_groups:
+            await update.message.reply_text(
+                "🔍 **User Verification**\n\n"
+                "❌ **No Groups Available**\n\n"
+                "You're not in any groups that require verification yet. "
+                "Join a group where the bot is active and try again.\n\n"
+                "If you know the group ID, you can use:\n"
+                "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`"
+            )
+            return
+        
+        # Create group selection message
+        group_list = "🔍 **Available Groups for Verification**\n\n"
+        group_list += "Choose a group by typing the number, or use the format below:\n\n"
+        
+        for i, (group_id, group_name, has_rules) in enumerate(user_groups, 1):
+            rule_info = "🔐 Requires verification" if has_rules else "✅ No verification needed"
+            group_list += f"{i}. **{group_name}** - {rule_info}\n"
+            group_list += f"   ID: `{group_id}`\n\n"
+        
+        group_list += "**Option 1: Quick Selection**\n"
+        group_list += f"Reply with a number (1-{len(user_groups)}) to select a group\n\n"
+        
+        group_list += "**Option 2: Direct Format**\n"
+        group_list += "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`\n\n"
+        
+        group_list += "**Example:**\n"
+        group_list += f"`/verify Country: USA, Age: 25, NFT: Penguin, Group: {user_groups[0][0]}`"
+        
+        # Store available groups for selection
+        context.user_data['available_groups_for_verification'] = user_groups
+        context.user_data['awaiting_group_selection_for_verification'] = True
+        
+        await update.message.reply_text(group_list)
+    
+    @staticmethod
+    async def handle_group_selection_for_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle group selection for verification when user chooses a number."""
+        user = update.effective_user
+        text = update.message.text.strip()
+        
+        available_groups = context.user_data.get('available_groups_for_verification', [])
+        
+        try:
+            selection = int(text)
+            if 1 <= selection <= len(available_groups):
+                group_id, group_name, has_rules = available_groups[selection - 1]
+                
+                # Clean up selection state
+                context.user_data.pop('awaiting_group_selection_for_verification', None)
+                context.user_data.pop('available_groups_for_verification', None)
+                
+                # Check if group has rules
+                if has_rules:
+                    # Show requirements and ask for verification data
+                    requirements_text = verification.get_verification_requirements_text(group_id)
+                    
+                    await update.message.reply_text(
+                        f"🔍 **Selected: {group_name}**\n\n"
+                        f"{requirements_text}\n\n"
+                        "Now provide your verification information in this format:\n"
+                        "`Country: [country], Age: [age], NFT: [Penguin/Ape/None]`\n\n"
+                        "Example: `Country: USA, Age: 25, NFT: Penguin`"
+                    )
+                    
+                    # Set up verification data collection
+                    context.user_data['collecting_verification_data_for_group'] = group_id
+                    context.user_data['target_group_name'] = group_name
+                else:
+                    await update.message.reply_text(f"✅ **{group_name}** has no verification requirements. You're all set!")
+            else:
+                await update.message.reply_text(f"❌ Please enter a number between 1 and {len(available_groups)}:")
+        except ValueError:
+            await update.message.reply_text(f"❌ Please enter a valid number between 1 and {len(available_groups)}:")
+    
+    @staticmethod
+    async def handle_verification_data_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle collecting verification data after group selection."""
+        user = update.effective_user
+        text = update.message.text.strip()
+        
+        group_id = context.user_data.get('collecting_verification_data_for_group')
+        group_name = context.user_data.get('target_group_name', f"Group {group_id}")
+        
+        # Parse the input format: Country: X, Age: Y, NFT: Z
+        try:
+            # Split by comma and parse each part
+            parts = [part.strip() for part in text.split(',')]
+            user_data = {}
+            
+            for part in parts:
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    if key == 'country':
+                        user_data['country'] = value
+                    elif key == 'age':
+                        try:
+                            user_data['age'] = int(value)
+                        except ValueError:
+                            await update.message.reply_text("❌ Age must be a number.")
+                            return
+                    elif key == 'nft':
+                        user_data['nft'] = value if value.lower() != 'none' else None
+            
+            # Store the user data with group ID
+            user_data['group_id'] = group_id
+            data_storage.store_user_registration_data(user.id, user_data)
+            
+            # Show collected data
+            collected_data = f"📝 **Data Collected for {group_name}:**\n"
+            collected_data += f"• Country: {user_data.get('country', 'Not provided')}\n"
+            collected_data += f"• Age: {user_data.get('age', 'Not provided')}\n"
+            collected_data += f"• NFT: {user_data.get('nft', 'None')}\n\n"
+            
+            await update.message.reply_text(collected_data + "Starting verification process...")
+            
+            # Clean up collection state
+            context.user_data.pop('collecting_verification_data_for_group', None)
+            context.user_data.pop('target_group_name', None)
+            
+            # Start verification process
+            await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
+            
+        except Exception as e:
+            logger.error(f"Error processing verification data: {e}")
+            await update.message.reply_text(
+                "❌ Invalid format. Please use:\n"
+                "`Country: [country], Age: [age], NFT: [Penguin/Ape/None]`\n\n"
+                "Example: `Country: USA, Age: 25, NFT: Penguin`"
+            )
+    
+    @staticmethod
     async def verify_with_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Combined command to collect user data and start verification."""
         user = update.effective_user
@@ -1085,13 +1288,8 @@ class VerificationHandlers:
         
         # Check if user provided all data in format: Country: X, Age: Y, NFT: Z, Group: ID
         if not context.args:
-            await update.message.reply_text(
-                "🔍 **User Verification**\n\n"
-                "Please provide your information in this format:\n"
-                "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`\n\n"
-                "Example:\n"
-                "`/verify Country: USA, Age: 25, NFT: Penguin, Group: -1001234567890`"
-            )
+            # Show available groups instead of requiring group ID
+            await VerificationHandlers._show_verification_help_with_groups(update, context, user)
             return
         
         # Parse the input
