@@ -145,15 +145,20 @@ class ROFLWalletService:
             raise Exception(f"Failed to derive address: {str(e)}")
     
     def get_wallet_balance(self, address: str, rpc_url: str = "https://sapphire.oasis.io") -> float:
-        """Get wallet balance from blockchain."""
+        """Get wallet balance from Oasis Sapphire blockchain."""
         try:
+            # Create Web3 instance with Sapphire provider
             web3 = Web3(Web3.HTTPProvider(rpc_url))
-            if not web3.is_connected():
-                raise Exception("Failed to connect to blockchain")
             
+            if not web3.is_connected():
+                raise Exception("Failed to connect to Oasis Sapphire blockchain")
+            
+            # Get balance in wei
             balance_wei = web3.eth.get_balance(address)
-            balance_eth = web3.from_wei(balance_wei, 'ether')
-            return float(balance_eth)
+            
+            # Convert wei to ROSE (equivalent to ether)
+            balance_rose = web3.from_wei(balance_wei, 'ether')
+            return float(balance_rose)
             
         except Exception as e:
             logger.error(f"Error getting wallet balance: {e}")
