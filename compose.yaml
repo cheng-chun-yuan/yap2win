@@ -6,7 +6,5 @@ services:
     environment:
       - TOKEN=${TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./src:/app/src
     command: python -m bot
     working_dir: /app/src
