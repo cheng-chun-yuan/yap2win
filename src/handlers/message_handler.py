@@ -8,11 +8,11 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from datetime import datetime
 
-from config import GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE
-from data_storage import data_storage
-from reward_system import reward_system
-from scoring import scorer
-from verification import verification
+from config.config import GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE
+from services.data_storage import data_storage
+from services.reward_system import reward_system
+from services.deepeval_scoring import deepeval_scorer
+from utils.verification import verification
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +141,8 @@ class MessageProcessor:
             'lastName': user.last_name
         }
         
-        # Calculate score
-        score = scorer.calculate_score(text, user_info)
+        # Calculate score using DeepEval LLM-as-a-judge
+        score = deepeval_scorer.calculate_score(text, user_info, group_name=chat.title or "Community")
         
         print(f'Message processed, score: {score}')
         print(f'User {user_id} earned {score:.2f} points in chat {chat_id}')
@@ -207,7 +207,7 @@ class MessageProcessor:
     async def _send_score_notification(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                      user: Any, score: float, group_name: str) -> None:
         """Send score notification to user."""
-        response = scorer.format_score_message(score, group_name)
+        response = deepeval_scorer.format_score_message(score, group_name)
         
         # Try to send to user's private chat instead of group
         try:

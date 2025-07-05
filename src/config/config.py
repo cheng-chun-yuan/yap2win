@@ -22,35 +22,39 @@ ENTERING_RANK_DISTRIBUTION = 4
 ENTERING_START_TIME = 5
 ENTERING_END_TIME = 6
 
-# Scoring configuration
+# DeepEval LLM-as-a-Judge Scoring Configuration
 MAX_SCORE = 10.0
-ENGAGEMENT_WORDS = ['thanks', 'thank you', 'great', 'awesome', 'cool', 'nice', 'good']
 
-# Scoring weights
-SCORE_WEIGHTS = {
-    'base_long_message': 1.0,
-    'extra_long_message': 2.0,
-    'question_bonus': 1.5,
-    'engagement_bonus': 1.0,
-    'emoji_multiplier': 0.5,
-    'emoji_max_bonus': 3.0
+# DeepEval scoring criteria and weights
+DEEPEVAL_CONFIG = {
+    'model': 'gpt-4',
+    'max_score': 10.0,
+    'fallback_score': 5.0,
+    'engagement_criteria': [
+        'Encourages discussion and interaction',
+        'Shows genuine interest in others\' opinions',
+        'Uses inclusive and welcoming language',
+        'Asks thoughtful questions',
+        'Provides helpful or informative content',
+        'Uses appropriate emojis and tone',
+        'Avoids spam, trolling, or negative behavior',
+        'Contributes meaningfully to the conversation'
+    ]
 }
 
-# Message scoring thresholds
-MESSAGE_LENGTH_THRESHOLD = 10
-EXTRA_LENGTH_THRESHOLD = 50
-
-# Bot response emojis
+# Bot response emojis for DeepEval scores
 RESPONSE_EMOJIS = {
-    'high_score': '🎉',
-    'medium_score': '🎯',
-    'low_score': '✨'
+    'high_score': '🎉',    # 8-10 points
+    'medium_score': '🎯',  # 6-7 points
+    'low_score': '✨',     # 4-5 points
+    'basic_score': '💬'    # 0-3 points
 }
 
 # Score thresholds for different emojis
 EMOJI_THRESHOLDS = {
     'high': 8.0,
-    'medium': 5.0
+    'medium': 6.0,
+    'low': 4.0
 }
 
 # Default rank distribution percentages
@@ -88,6 +92,12 @@ HELP_TEXT = """
 • `/leaderboard` - View current rankings and points
 • `/reward` or `/rewards` - View event details, rewards, and time remaining
 • `/result` - View current standings (during event) or final results (after event)
+
+🤖 AI-Powered Scoring:
+• Messages are automatically scored (0-10 points) using AI
+• Scoring considers: engagement, helpfulness, inclusivity, and conversation quality
+• Points are awarded for meaningful contributions and positive interactions
+• Spam, trolling, or irrelevant content receives low scores
 
 ℹ️ How to use:
 1. Add me to your group(s)

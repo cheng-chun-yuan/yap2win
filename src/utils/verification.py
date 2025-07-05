@@ -3,7 +3,7 @@ User verification module for bot access control.
 """
 
 from typing import Dict, Set
-from config import VERIFICATION_MESSAGE, VERIFICATION_RESPONSE
+from config.config import VERIFICATION_MESSAGE, VERIFICATION_RESPONSE
 
 
 class UserVerification:

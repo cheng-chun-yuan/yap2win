@@ -3,6 +3,7 @@ Data storage module for user points and group tracking.
 """
 
 from typing import Dict, Any, Optional, List, Tuple
+from config.config import *
 
 
 class DataStorage:

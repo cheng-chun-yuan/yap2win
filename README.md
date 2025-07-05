@@ -4,13 +4,16 @@ A Telegram bot that rewards users for engaging in group conversations with point
 
 ## Features
 
-- **Message Scoring**: Automatically scores messages based on length, engagement, and content
+- **AI-Powered Scoring**: Uses DeepEval with GPT-4 to evaluate community engagement on a 0-10 scale
+- **Strict Quality Control**: Only meaningful, unique, and helpful content gets points
+- **Zero-Point System**: Simple greetings like "ok", "gm", "thanks" get 0 points automatically
 - **Reward Events**: Pool and rank-based reward events with configurable timeframes
 - **Real-time Leaderboards**: Live rankings during active events
 - **User Verification**: Simple verification system to prevent spam
 - **Multi-group Support**: Manage multiple groups simultaneously
 - **Always Active**: Bot always tracks points and sends notifications in all groups
 - **Event Control**: Event participation only happens in groups where listening is active
+- **Fallback System**: Rule-based scoring when AI is unavailable
 
 ## Commands
 
@@ -29,7 +32,15 @@ A Telegram bot that rewards users for engaging in group conversations with point
 
 ## Recent Updates
 
-### Fixed Issues (Latest)
+### Major Upgrade: AI-Powered Scoring (Latest)
+- 🤖 **DeepEval Integration**: Replaced rule-based scoring with GPT-4 powered evaluation
+- 🎯 **Strict Quality Focus**: Only meaningful, unique, and helpful content gets points
+- 🚫 **Zero-Point System**: Simple greetings like "ok", "gm", "thanks" get 0 points
+- 📊 **0-10 Scale**: More granular scoring system for better engagement tracking
+- 🔄 **Fallback System**: Automatic fallback to rule-based scoring if AI is unavailable
+- ⚡ **Real-time AI Evaluation**: Messages are scored immediately using advanced AI analysis
+
+### Previous Updates
 - ✅ **Fixed `/rewards` command**: Added `/rewards` as an alias for `/reward`
 - ✅ **Fixed leaderboard display**: Now properly shows current standings during active events
 - ✅ **Added `/result` command**: Shows current standings during events and final results after events
@@ -38,18 +49,19 @@ A Telegram bot that rewards users for engaging in group conversations with point
 - ✅ **Updated command names**: Changed `/start` to `/init` and `/set_reward` to `/set`
 - ✅ **Always active points**: Bot now always tracks points and sends notifications in all groups
 
-### New Features
-- 🆕 **Real-time standings**: See current rankings during active events
-- 🆕 **Time remaining display**: Shows countdown for active events
-- 🆕 **Event status awareness**: Commands now handle different event states (not started, active, finished)
-- 🆕 **Better formatting**: Improved display with medals and clear information
-- 🆕 **Always active**: Points tracking works in all groups, not just active ones
-
 ## Setup
 
-1. Create a `.env` file with your bot token:
+### Quick Setup (Recommended)
+Run the automated setup script:
+```bash
+python setup_deepeval.py
+```
+
+### Manual Setup
+1. Create a `.env` file with your bot token and OpenAI API key:
 ```
 TOKEN=your_bot_token_here
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 2. Install dependencies:
@@ -57,10 +69,21 @@ TOKEN=your_bot_token_here
 pip install -r requirements.txt
 ```
 
-3. Run the bot:
+3. Test the DeepEval integration:
+```bash
+python test_deepeval.py
+```
+
+4. Run the bot:
 ```bash
 python bot.py
 ```
+
+### OpenAI API Key
+
+The bot requires an OpenAI API key for AI-powered scoring. You can get one at [OpenAI Platform](https://platform.openai.com/api-keys).
+
+**Note**: Each message evaluation costs approximately $0.01-0.03 depending on message length.
 
 ## Event Types
 
@@ -88,8 +111,9 @@ python bot.py
 ## Technical Details
 
 - Built with python-telegram-bot
+- AI-powered scoring using DeepEval and GPT-4
 - In-memory data storage (resets on restart)
-- Configurable scoring system
+- Configurable scoring system with fallback
 - Event-driven architecture
 
 ## Setup Instructions

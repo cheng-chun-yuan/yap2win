@@ -4,7 +4,7 @@ Reward system module for managing events and distributions.
 
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
-from config import (
+from config.config import (
     DEFAULT_RANK_DISTRIBUTION, EVENT_STATUS_ACTIVE, EVENT_STATUS_FINISHED,
     REWARD_TYPE_POOL, REWARD_TYPE_RANK, DATE_FORMAT
 )

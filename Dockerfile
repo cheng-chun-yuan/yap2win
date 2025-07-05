@@ -3,8 +3,11 @@ FROM python:3.10-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py .
+RUN pip install -r requirements.txt
 
-CMD ["python", "bot.py"]
+COPY src/ ./src/
+
+WORKDIR /app/src
+
+CMD ["python", "-m", "bot"]

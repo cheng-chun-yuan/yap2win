@@ -3,7 +3,7 @@ Scoring module for message analysis and point calculation.
 """
 
 from typing import Dict, Any
-from config import (
+from config.config import (
     MAX_SCORE, ENGAGEMENT_WORDS, SCORE_WEIGHTS, 
     MESSAGE_LENGTH_THRESHOLD, EXTRA_LENGTH_THRESHOLD
 )
@@ -49,8 +49,6 @@ class MessageScorer:
     
     def get_emoji_for_score(self, score: float) -> str:
         """Get appropriate emoji based on score."""
-        from config import RESPONSE_EMOJIS, EMOJI_THRESHOLDS
-        
         if score >= EMOJI_THRESHOLDS['high']:
             return RESPONSE_EMOJIS['high_score']
         elif score >= EMOJI_THRESHOLDS['medium']:

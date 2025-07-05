@@ -8,14 +8,14 @@ from typing import Dict, Any, List, Tuple
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from config import (
+from config.config import (
     CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT,
     ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME,
     ADMIN_STATUSES, GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE, HELP_TEXT, DATE_FORMAT,
     REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE
 )
-from data_storage import data_storage
-from reward_system import reward_system
+from services.data_storage import data_storage
+from services.reward_system import reward_system
 
 logger = logging.getLogger(__name__)
 
