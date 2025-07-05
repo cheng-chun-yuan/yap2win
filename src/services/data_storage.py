@@ -16,6 +16,10 @@ class DataStorage:
         
         # Set to track which groups are being listened to
         self.listening_groups: set = set()
+        
+        # Dictionary to store user registration data
+        # Format: {user_id: {'country': str, 'age': int, 'nft': str, 'group_id': int}}
+        self.user_registration_data: Dict[int, Dict[str, Any]] = {}
     
     def add_listening_group(self, group_id: int) -> None:
         """Add a group to the listening list."""
@@ -145,6 +149,57 @@ class DataStorage:
         if not hasattr(self, 'wallet_info'):
             return {}
         return self.wallet_info.copy()
+    
+    def store_user_registration_data(self, user_id: int, user_data: Dict[str, Any]) -> None:
+        """
+        Store user registration information.
+        
+        Args:
+            user_id: The user's ID
+            user_data: Dictionary containing user registration data with keys:
+                      - country: User's country
+                      - age: User's age
+                      - nft: User's NFT information
+                      - group_id: Group ID where user registered
+        """
+        self.user_registration_data[user_id] = user_data.copy()
+    
+    def get_user_registration_data(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get user registration information.
+        
+        Args:
+            user_id: The user's ID
+            
+        Returns:
+            Dictionary containing user registration data or None if not found
+        """
+        return self.user_registration_data.get(user_id)
+    
+    def is_user_registered(self, user_id: int) -> bool:
+        """
+        Check if a user is registered.
+        
+        Args:
+            user_id: The user's ID
+            
+        Returns:
+            True if user is registered, False otherwise
+        """
+        return user_id in self.user_registration_data
+    
+    def get_all_registered_users(self) -> Dict[int, Dict[str, Any]]:
+        """
+        Get all registered users data.
+        
+        Returns:
+            Dictionary of all user registration data
+        """
+        return self.user_registration_data.copy()
+    
+    def get_registered_users_count(self) -> int:
+        """Get count of registered users."""
+        return len(self.user_registration_data)
 
 
 # Global data storage instance

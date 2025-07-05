@@ -2,7 +2,8 @@ import logging
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ChatMemberHandler, ConversationHandler
 
 from config.config import TOKEN, CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT, ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME
-from handlers.handlers import AdminHandlers, UserHandlers, BotHandlers, ROFLHandlers
+from handlers.reward_handlers import ENTERING_VERIFICATION_RULES
+from handlers.handlers import AdminHandlers, UserHandlers, BotHandlers, ROFLHandlers, VerificationHandlers
 from handlers.reward_handlers import RewardHandlers
 from handlers.message_handler import message_processor
 
@@ -38,6 +39,12 @@ app.add_handler(CommandHandler("new_bot", ROFLHandlers.new_bot))
 app.add_handler(CommandHandler("bot", ROFLHandlers.bot_info))
 app.add_handler(CommandHandler("test", ROFLHandlers.test))
 
+# Add verification commands  
+app.add_handler(CommandHandler("verify", VerificationHandlers.verify_with_data))
+# Keep old verification handlers for backwards compatibility
+app.add_handler(CommandHandler("verify_old", VerificationHandlers.verify_user))
+app.add_handler(CommandHandler("set_rule", VerificationHandlers.set_rule))
+
 # Add conversation handler for set command
 set_reward_handler = ConversationHandler(
     entry_points=[CommandHandler("set", RewardHandlers.set_reward)],
@@ -49,6 +56,7 @@ set_reward_handler = ConversationHandler(
         ENTERING_RANK_DISTRIBUTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_rank_distribution)],
         ENTERING_START_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_start_time)],
         ENTERING_END_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_end_time)],
+        ENTERING_VERIFICATION_RULES: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_verification_rules)],
     },
     fallbacks=[CommandHandler("cancel", RewardHandlers.cancel_reward_setup)],
 )

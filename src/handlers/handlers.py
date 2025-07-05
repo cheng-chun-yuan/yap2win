@@ -18,6 +18,7 @@ from config.config import (
 from services.data_storage import data_storage
 from services.reward_system import reward_system
 from services.rofl_service import rofl_service
+from utils.verification import verification, VerificationRule
 
 logger = logging.getLogger(__name__)
 
@@ -515,6 +516,655 @@ Send ROSE tokens to the address above on Oasis Sapphire network.
             await update.message.reply_text(f"❌ Failed to get ROFL app ID: {str(e)}")
 
 
+class VerificationHandlers:
+    """Handles verification-related commands."""
+    
+    @staticmethod
+    async def set_rule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Admin command to set verification rules for a group."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in private chat
+        if chat.type != PRIVATE_CHAT_TYPE:
+            await update.message.reply_text("❌ This command only works in private chat.")
+            return
+        
+        # If user provided group ID directly, use it
+        if context.args:
+            try:
+                group_id = int(context.args[0])
+                await VerificationHandlers._verify_admin_and_start_rule_setting(update, context, user, group_id)
+                return
+            except ValueError:
+                await update.message.reply_text("❌ Invalid group ID. Please provide a valid number.")
+                return
+        
+        # Get groups where user is admin
+        admin_groups = await VerificationHandlers._get_user_admin_groups(context, user.id)
+        
+        if not admin_groups:
+            await update.message.reply_text(
+                "👑 **No Admin Groups Found**\n\n"
+                "You're not an admin in any groups where the bot is present, or the bot cannot access those groups.\n\n"
+                "To use this command:\n"
+                "• Make sure you're an admin in a group\n"
+                "• Add the bot to that group\n"
+                "• Try again with `/set_rule <group_id>` if needed"
+            )
+            return
+        
+        # Show groups for admin to pick
+        context.user_data['selecting_group_for_rule_setting'] = True
+        context.user_data['available_admin_groups'] = admin_groups
+        
+        group_list = ""
+        for i, (group_id, group_name, admin_role, has_rules) in enumerate(admin_groups, 1):
+            rule_status = "📝 Has rules" if has_rules else "🆕 No rules set"
+            group_list += f"{i}. **{group_name}** - {admin_role} - {rule_status}\n"
+        
+        await update.message.reply_text(
+            f"👑 **Select Group to Set Rules**\n\n"
+            f"I found you as admin in these groups:\n\n{group_list}\n"
+            f"Reply with the number (1-{len(admin_groups)}) to set verification rules for that group:"
+        )
+    
+    @staticmethod
+    async def _get_user_admin_groups(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> list:
+        """Get groups where user is admin and bot has access."""
+        admin_groups = []
+        
+        # We need to check groups where the bot exists and user might be admin
+        # Since we can't enumerate all groups, we'll check groups that have rules or listening status
+        checked_groups = set()
+        
+        # Check groups with verification rules
+        for group_id in verification.group_rules.keys():
+            checked_groups.add(group_id)
+        
+        # Check groups where bot is listening
+        listening_groups = data_storage.get_listening_groups()
+        for group_id in listening_groups:
+            checked_groups.add(group_id)
+        
+        # Check each group for admin status
+        for group_id in checked_groups:
+            try:
+                # Check if user is admin in this group
+                chat_member = await context.bot.get_chat_member(group_id, user_id)
+                if chat_member.status in ADMIN_STATUSES:
+                    # Get group info
+                    try:
+                        group_chat = await context.bot.get_chat(group_id)
+                        group_name = group_chat.title
+                    except Exception:
+                        group_name = f"Group {group_id}"
+                    
+                    # Determine admin role
+                    admin_role = "👑 Owner" if chat_member.status == "creator" else "🛡️ Admin"
+                    
+                    # Check if group has rules
+                    has_rules = verification.has_group_rule(group_id)
+                    
+                    admin_groups.append((group_id, group_name, admin_role, has_rules))
+            except Exception:
+                # User not admin or error accessing group
+                continue
+        
+        return admin_groups
+    
+    @staticmethod
+    async def _verify_admin_and_start_rule_setting(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                                  user: Any, group_id: int) -> None:
+        """Verify admin status and start rule setting for specific group."""
+        try:
+            chat_member = await context.bot.get_chat_member(group_id, user.id)
+            if chat_member.status not in ADMIN_STATUSES:
+                await update.message.reply_text("❌ You are not an admin in that group.")
+                return
+        except Exception:
+            await update.message.reply_text("❌ Unable to verify your admin status in that group.")
+            return
+        
+        # Start the rule setting process
+        await VerificationHandlers._start_rule_setting(update, context, group_id)
+    
+    @staticmethod
+    async def handle_admin_group_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle admin group selection for rule setting."""
+        text = update.message.text.strip()
+        
+        available_groups = context.user_data.get('available_admin_groups', [])
+        
+        try:
+            selection = int(text)
+            if 1 <= selection <= len(available_groups):
+                group_id, group_name, admin_role, has_rules = available_groups[selection - 1]
+                
+                # Clean up group selection state
+                context.user_data.pop('selecting_group_for_rule_setting', None)
+                context.user_data.pop('available_admin_groups', None)
+                
+                await update.message.reply_text(
+                    f"👑 **Setting Rules for {group_name}**\n\n"
+                    f"Your role: {admin_role}\n"
+                    f"Current status: {'📝 Has existing rules' if has_rules else '🆕 No rules set'}\n\n"
+                    f"Starting rule configuration..."
+                )
+                
+                await VerificationHandlers._start_rule_setting(update, context, group_id)
+            else:
+                await update.message.reply_text(f"❌ Please enter a number between 1 and {len(available_groups)}:")
+        except ValueError:
+            await update.message.reply_text(f"❌ Please enter a valid number between 1 and {len(available_groups)}:")
+    
+    @staticmethod
+    async def _start_rule_setting(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                 group_id: int) -> None:
+        """Start the rule setting process."""
+        # Store the group_id in context for later use
+        context.user_data['setting_rule_for_group'] = group_id
+        context.user_data['verification_step'] = 'country'
+        context.user_data['rule_data'] = {}
+        
+        await update.message.reply_text(
+            "🔧 **Setting Verification Rules**\n\n"
+            "I'll collect all verification requirements in one go. "
+            "You can type 'None' to skip any requirement.\n\n"
+            "Please provide your requirements in this format:\n"
+            "**Country: [country name or None]**\n"
+            "**Age: [minimum age or None]**\n"
+            "**NFT: [Penguin/Ape or None]**\n\n"
+            "Example: Country: USA, Age: 18, NFT: Penguin\n"
+            "Or: Country: None, Age: 21, NFT: None"
+        )
+    
+    @staticmethod
+    async def handle_rule_setting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle rule setting conversation."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in private chat
+        if chat.type != PRIVATE_CHAT_TYPE:
+            return
+        
+        # Check if user is in rule setting mode
+        if 'setting_rule_for_group' not in context.user_data:
+            return
+        
+        text = update.message.text.strip()
+        
+        # Parse the input format: Country: X, Age: Y, NFT: Z
+        try:
+            # Split by comma and parse each part
+            parts = [part.strip() for part in text.split(',')]
+            rule_data = {}
+            
+            for part in parts:
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    if key == 'country':
+                        rule_data['country'] = value if value.lower() != 'none' else None
+                    elif key == 'age':
+                        if value.lower() != 'none':
+                            try:
+                                age = int(value)
+                                rule_data['age'] = age if age >= 0 else None
+                            except ValueError:
+                                rule_data['age'] = None
+                        else:
+                            rule_data['age'] = None
+                    elif key == 'nft':
+                        if value.lower() in ['penguin']:
+                            rule_data['nft_holder'] = 'penguin'
+                        elif value.lower() in ['ape']:
+                            rule_data['nft_holder'] = 'ape'
+                        else:
+                            rule_data['nft_holder'] = None
+            
+            # Save parsed data
+            context.user_data['rule_data'] = rule_data
+            await VerificationHandlers._save_rule(update, context, user)
+            
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ Invalid format. Please use:\n"
+                "Country: [name or None], Age: [number or None], NFT: [Penguin/Ape or None]\n\n"
+                "Example: Country: USA, Age: 18, NFT: Penguin"
+            )
+    
+    @staticmethod
+    async def _save_rule(update: Update, context: ContextTypes.DEFAULT_TYPE, user: Any) -> None:
+        """Save the verification rule."""
+        group_id = context.user_data['setting_rule_for_group']
+        rule_data = context.user_data['rule_data']
+        
+        # Create the rule
+        rule = VerificationRule(
+            country=rule_data.get('country'),
+            age=rule_data.get('age'),
+            nft_holder=rule_data.get('nft_holder'),
+            collect_address=rule_data.get('collect_address', True)
+        )
+        
+        # Save the rule
+        verification.set_group_rule(group_id, rule)
+        
+        # Get group info
+        try:
+            group_chat = await context.bot.get_chat(group_id)
+            group_name = group_chat.title
+        except Exception:
+            group_name = f"Group {group_id}"
+        
+        # Create summary message
+        summary = f"✅ **Verification Rule Set for {group_name}**\n\n"
+        summary += verification.get_verification_requirements_text(group_id)
+        
+        await update.message.reply_text(summary)
+        
+        # Clean up context
+        context.user_data.pop('setting_rule_for_group', None)
+        context.user_data.pop('verification_step', None)
+        context.user_data.pop('rule_data', None)
+        
+        logger.info(f"Admin {user.first_name} (ID: {user.id}) set verification rule for group {group_id}")
+        print(f"🔧 Admin {user.first_name} set verification rule for group {group_id}")
+    
+    @staticmethod
+    async def verify_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle user verification process."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in private chat
+        if chat.type != PRIVATE_CHAT_TYPE:
+            await update.message.reply_text("❌ This command only works in private chat.")
+            return
+        
+        # If user provided group ID directly, use it
+        if context.args:
+            try:
+                group_id = int(context.args[0])
+                await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
+                return
+            except ValueError:
+                await update.message.reply_text("❌ Invalid group ID. Please provide a valid number.")
+                return
+        
+        # Get groups the user is in that have verification rules
+        user_groups = await VerificationHandlers._get_user_groups_with_rules(context, user.id)
+        
+        if not user_groups:
+            await update.message.reply_text(
+                "📝 **No Verification Needed**\n\n"
+                "You're not in any groups that require verification, or none of your groups have verification rules set up yet."
+            )
+            return
+        
+        # Show groups for user to pick
+        context.user_data['selecting_group_for_verification'] = True
+        context.user_data['available_groups'] = user_groups
+        
+        group_list = ""
+        for i, (group_id, group_name, has_rules) in enumerate(user_groups, 1):
+            status = "🔐 Requires verification" if has_rules else "✅ No verification needed"
+            group_list += f"{i}. **{group_name}** - {status}\n"
+        
+        await update.message.reply_text(
+            f"🔍 **Select Group for Verification**\n\n"
+            f"I found you in these groups:\n\n{group_list}\n"
+            f"Reply with the number (1-{len(user_groups)}) to select a group for verification:"
+        )
+    
+    @staticmethod
+    async def _get_user_groups_with_rules(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> list:
+        """Get groups the user is in that have verification rules."""
+        user_groups = []
+        
+        # Check all groups that have verification rules
+        for group_id in verification.group_rules.keys():
+            try:
+                # Check if user is member of this group
+                chat_member = await context.bot.get_chat_member(group_id, user_id)
+                if chat_member.status in ['member', 'administrator', 'creator']:
+                    # Get group info
+                    try:
+                        group_chat = await context.bot.get_chat(group_id)
+                        group_name = group_chat.title
+                    except Exception:
+                        group_name = f"Group {group_id}"
+                    
+                    has_rules = verification.has_group_rule(group_id)
+                    user_groups.append((group_id, group_name, has_rules))
+            except Exception:
+                # User not in group or error accessing group
+                continue
+        
+        return user_groups
+    
+    @staticmethod
+    async def _start_verification_for_group(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                          user: Any, group_id: int) -> None:
+        """Start verification process for a specific group."""
+        # Check if group has verification rules
+        if not verification.has_group_rule(group_id):
+            await update.message.reply_text("✅ This group has no verification requirements. You're all set!")
+            return
+        
+        # Get group info
+        try:
+            group_chat = await context.bot.get_chat(group_id)
+            group_name = group_chat.title
+        except Exception:
+            group_name = f"Group {group_id}"
+        
+        # Show requirements and start verification
+        requirements_text = verification.get_verification_requirements_text(group_id)
+        
+        await update.message.reply_text(
+            f"🔍 **Verification for {group_name}**\n\n"
+            f"{requirements_text}\n\n"
+            "Let's start the verification process. I'll ask you some questions."
+        )
+        
+        # Start verification process
+        verification.start_verification_process(user.id, group_id)
+        context.user_data['verifying_for_group'] = group_id
+        
+        # Ask first question
+        await VerificationHandlers._ask_verification_question(update, user)
+    
+    @staticmethod
+    async def handle_group_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle group selection for verification."""
+        user = update.effective_user
+        text = update.message.text.strip()
+        
+        available_groups = context.user_data.get('available_groups', [])
+        
+        try:
+            selection = int(text)
+            if 1 <= selection <= len(available_groups):
+                group_id, group_name, has_rules = available_groups[selection - 1]
+                
+                # Clean up group selection state
+                context.user_data.pop('selecting_group_for_verification', None)
+                context.user_data.pop('available_groups', None)
+                
+                if has_rules:
+                    await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
+                else:
+                    await update.message.reply_text(f"✅ **{group_name}** has no verification requirements. You're all set!")
+            else:
+                await update.message.reply_text(f"❌ Please enter a number between 1 and {len(available_groups)}:")
+        except ValueError:
+            await update.message.reply_text(f"❌ Please enter a valid number between 1 and {len(available_groups)}:")
+    
+    @staticmethod
+    async def handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle verification conversation."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in private chat
+        if chat.type != PRIVATE_CHAT_TYPE:
+            return
+        
+        # Check if user is in verification mode
+        if 'verifying_for_group' not in context.user_data:
+            return
+        
+        pending = verification.get_pending_verification(user.id)
+        if not pending:
+            return
+        
+        step = pending['step']
+        text = update.message.text.strip()
+        group_id = pending['group_id']
+        rule = verification.get_group_rule(group_id)
+        
+        if step == 'country':
+            # Handle country input (mock version - accept any input matching user's name)
+            if rule.country and rule.country != "None":
+                verification.update_verification_data(user.id, 'country', text)
+                
+                # Mock version: accept if user enters their first name
+                if text.lower() == user.first_name.lower():
+                    await update.message.reply_text("✅ Country verified!")
+                else:
+                    await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
+                    return
+            
+            # Move to next step
+            if rule.age and rule.age > 0:
+                verification.advance_verification_step(user.id, 'age')
+                await update.message.reply_text(f"What is your age? (Must be at least {rule.age})")
+            elif rule.nft_holder is not None:
+                verification.advance_verification_step(user.id, 'nft')
+                await update.message.reply_text(f"Do you hold NFTs? (Must be {'Yes' if rule.nft_holder else 'No'})")
+            else:
+                await VerificationHandlers._complete_verification(update, context, user)
+        
+        elif step == 'age':
+            # Handle age input (mock version - accept if user enters their name)
+            try:
+                # Mock version: accept if user enters their first name instead of age
+                if text.lower() == user.first_name.lower():
+                    age = rule.age  # Set to minimum required age
+                    verification.update_verification_data(user.id, 'age', age)
+                    await update.message.reply_text("✅ Age verified!")
+                else:
+                    await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
+                    return
+                    
+            except Exception:
+                await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
+                return
+            
+            # Move to next step
+            if rule.nft_holder is not None:
+                verification.advance_verification_step(user.id, 'nft')
+                await update.message.reply_text(f"Do you hold NFTs? (Must be {'Yes' if rule.nft_holder else 'No'})")
+            elif rule.collect_address:
+                verification.advance_verification_step(user.id, 'wallet_address')
+                await update.message.reply_text("Please provide your wallet address for future rewards:")
+            else:
+                await VerificationHandlers._complete_verification(update, context, user)
+        
+        elif step == 'nft':
+            # Handle NFT input (mock version - accept if user enters their name)
+            # Mock version: accept if user enters their first name
+            if text.lower() == user.first_name.lower():
+                nft_answer = rule.nft_holder  # Set to required value
+                verification.update_verification_data(user.id, 'nft_holder', nft_answer)
+                await update.message.reply_text("✅ NFT status verified!")
+            else:
+                await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
+                return
+            
+            # Complete verification or ask for address
+            if rule.collect_address:
+                verification.advance_verification_step(user.id, 'wallet_address')
+                await update.message.reply_text("Please provide your wallet address for future rewards:")
+            else:
+                await VerificationHandlers._complete_verification(update, context, user)
+        
+        elif step == 'wallet_address':
+            # Handle wallet address input
+            address = text.strip()
+            
+            # Basic validation for wallet address
+            if len(address) < 10:
+                await update.message.reply_text("❌ Please enter a valid wallet address:")
+                return
+            
+            verification.update_verification_data(user.id, 'address', address)
+            await update.message.reply_text("✅ Wallet address recorded!")
+            
+            # Complete verification
+            await VerificationHandlers._complete_verification(update, context, user)
+    
+    @staticmethod
+    async def _ask_verification_question(update: Update, user: Any) -> None:
+        """Ask the first verification question."""
+        pending = verification.get_pending_verification(user.id)
+        if not pending:
+            return
+        
+        group_id = pending['group_id']
+        rule = verification.get_group_rule(group_id)
+        
+        if rule.country and rule.country != "None":
+            await update.message.reply_text(f"What is your country? (Must be {rule.country})")
+        elif rule.age and rule.age > 0:
+            verification.advance_verification_step(user.id, 'age')
+            await update.message.reply_text(f"What is your age? (Must be at least {rule.age})")
+        elif rule.nft_holder is not None:
+            verification.advance_verification_step(user.id, 'nft')
+            await update.message.reply_text(f"Do you hold NFTs? (Must be {'Yes' if rule.nft_holder else 'No'})")
+        elif rule.collect_address:
+            verification.advance_verification_step(user.id, 'wallet_address')
+            await update.message.reply_text("Please provide your wallet address for future rewards:")
+        else:
+            await update.message.reply_text("✅ No verification needed!")
+    
+    @staticmethod
+    async def _complete_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, user: Any) -> None:
+        """Complete the verification process."""
+        passed = verification.complete_verification(user.id)
+        
+        if passed:
+            # Get group info for notification
+            group_id = context.user_data.get('verifying_for_group')
+            if group_id:
+                try:
+                    group_chat = await context.bot.get_chat(group_id)
+                    group_name = group_chat.title
+                    
+                    # Send notification to group
+                    await context.bot.send_message(
+                        chat_id=group_id,
+                        text=f"🎉 {user.first_name} has successfully completed verification and can now participate in group activities!"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send group notification: {e}")
+            
+            await update.message.reply_text(
+                "🎉 **Verification Successful!**\n\n"
+                "You have successfully passed all verification requirements. "
+                "You can now participate in the group! A notification has been sent to the group."
+            )
+        else:
+            await update.message.reply_text(
+                "❌ **Verification Failed**\n\n"
+                "You did not meet all the verification requirements. "
+                "Please contact the group admin if you think this is an error."
+            )
+        
+        # Clean up context
+        context.user_data.pop('verifying_for_group', None)
+        
+        logger.info(f"User {user.first_name} (ID: {user.id}) completed verification: {'passed' if passed else 'failed'}")
+        print(f"🔍 User {user.first_name} verification: {'passed' if passed else 'failed'}")
+    
+    @staticmethod
+    async def verify_with_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Combined command to collect user data and start verification."""
+        user = update.effective_user
+        chat = update.effective_chat
+        
+        # Only work in private chat
+        if chat.type != PRIVATE_CHAT_TYPE:
+            await update.message.reply_text("❌ This command only works in private chat.")
+            return
+        
+        # Check if user provided all data in format: Country: X, Age: Y, NFT: Z, Group: ID
+        if not context.args:
+            await update.message.reply_text(
+                "🔍 **User Verification**\n\n"
+                "Please provide your information in this format:\n"
+                "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`\n\n"
+                "Example:\n"
+                "`/verify Country: USA, Age: 25, NFT: Penguin, Group: -1001234567890`"
+            )
+            return
+        
+        # Parse the input
+        text = ' '.join(context.args)
+        try:
+            # Split by comma and parse each part
+            parts = [part.strip() for part in text.split(',')]
+            user_data = {}
+            
+            for part in parts:
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    if key == 'country':
+                        user_data['country'] = value
+                    elif key == 'age':
+                        try:
+                            user_data['age'] = int(value)
+                        except ValueError:
+                            await update.message.reply_text("❌ Age must be a number.")
+                            return
+                    elif key == 'nft':
+                        user_data['nft'] = value if value.lower() != 'none' else None
+                    elif key == 'group':
+                        try:
+                            user_data['group_id'] = int(value)
+                        except ValueError:
+                            await update.message.reply_text("❌ Group ID must be a number.")
+                            return
+            
+            # Validate required fields
+            if 'group_id' not in user_data:
+                await update.message.reply_text("❌ Group ID is required.")
+                return
+            
+            group_id = user_data['group_id']
+            
+            # Check if group has verification rules
+            if not verification.has_group_rule(group_id):
+                await update.message.reply_text("✅ This group has no verification requirements. You're all set!")
+                return
+            
+            # Store user data
+            data_storage.store_user_registration_data(user.id, user_data)
+            
+            # Get group info
+            try:
+                group_chat = await context.bot.get_chat(group_id)
+                group_name = group_chat.title
+            except Exception:
+                group_name = f"Group {group_id}"
+            
+            # Show collected data and start verification
+            collected_data = f"📝 **Registration Data Collected:**\n"
+            collected_data += f"• Country: {user_data.get('country', 'Not provided')}\n"
+            collected_data += f"• Age: {user_data.get('age', 'Not provided')}\n"
+            collected_data += f"• NFT: {user_data.get('nft', 'None')}\n"
+            collected_data += f"• Group: {group_name}\n\n"
+            
+            await update.message.reply_text(collected_data + "Now starting verification process...")
+            
+            # Start verification automatically
+            await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
+            
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ Invalid format. Please use:\n"
+                "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`"
+            )
+
+
 class BotHandlers:
     """Handles bot-related events."""
     
@@ -539,3 +1189,4 @@ class BotHandlers:
 admin_handlers = AdminHandlers()
 user_handlers = UserHandlers()
 bot_handlers = BotHandlers()
+verification_handlers = VerificationHandlers()

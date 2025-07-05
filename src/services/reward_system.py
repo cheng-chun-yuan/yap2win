@@ -258,12 +258,22 @@ class RewardSystem:
         """Validate that custom rank amounts sum to total amount."""
         return abs(sum(custom_amounts) - total_amount) <= 0.01
     
-    def format_event_announcement(self, config: Dict[str, Any]) -> str:
+    def format_event_announcement(self, config: Dict[str, Any], group_id: int = None) -> str:
         """Format event announcement message."""
         event_type = config.get('type')
         total_amount = config.get('total_amount', 0)
         start_time = config.get('start_time')
         end_time = config.get('end_time')
+        
+        # Get verification rules if group_id is provided
+        verification_text = ""
+        if group_id:
+            try:
+                from utils.verification import verification
+                if verification.has_group_rule(group_id):
+                    verification_text = f"\n\n🔧 **Verification Required:**\n{verification.get_verification_requirements_text(group_id)}\nUse `/verify` to participate!"
+            except Exception:
+                pass  # If verification module not available, continue without it
         
         if event_type == REWARD_TYPE_POOL:
             return (
@@ -272,6 +282,7 @@ class RewardSystem:
                 f"Start Time: {start_time.strftime(DATE_FORMAT)}\n"
                 f"End Time: {end_time.strftime(DATE_FORMAT)}\n\n"
                 f"Start chatting to earn points! Everyone who participates will get an equal share of the reward pool."
+                f"{verification_text}"
             )
         else:  # rank type
             rank_rewards = config.get('rank_rewards', {})
@@ -283,6 +294,7 @@ class RewardSystem:
                 f"End Time: {end_time.strftime(DATE_FORMAT)}\n\n"
                 f"Rank Distribution:\n{rank_text}\n\n"
                 f"Start chatting to earn points and climb the rankings!"
+                f"{verification_text}"
             )
     
     def get_current_standings(self, group_id: int) -> str:

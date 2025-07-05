@@ -13,6 +13,7 @@ from services.data_storage import data_storage
 from services.reward_system import reward_system
 from services.deepeval_scoring import deepeval_scorer
 from utils.verification import verification
+from handlers.handlers import VerificationHandlers
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +68,25 @@ class MessageProcessor:
         print(f'Processing message from user {user_id} in chat {chat_id}: "{text_preview}"')
         
         # Handle verification in private chat
-        if chat.type == PRIVATE_CHAT_TYPE and verification.is_verification_message(text):
-            response = verification.verify_user(user_id)
-            await message.reply_text(response)
-            print(f'User {user_id} verified in private chat')
-            return
+        if chat.type == PRIVATE_CHAT_TYPE:
+            # Check for verification conversations
+            if context.user_data.get('setting_rule_for_group'):
+                await VerificationHandlers.handle_rule_setting(update, context)
+                return
+            elif context.user_data.get('selecting_group_for_rule_setting'):
+                await VerificationHandlers.handle_admin_group_selection(update, context)
+                return
+            elif context.user_data.get('selecting_group_for_verification'):
+                await VerificationHandlers.handle_group_selection(update, context)
+                return
+            elif context.user_data.get('verifying_for_group'):
+                await VerificationHandlers.handle_verification(update, context)
+                return
+            elif verification.is_verification_message(text):
+                response = verification.verify_user(user_id)
+                await message.reply_text(response)
+                print(f'User {user_id} verified in private chat')
+                return
         
         # Handle group messages
         if chat.type in GROUP_CHAT_TYPES:

@@ -14,8 +14,13 @@ from config.config import (
     ADMIN_STATUSES, PRIVATE_CHAT_TYPE, DATE_FORMAT,
     REWARD_TYPE_POOL, REWARD_TYPE_RANK
 )
+
+# Add new state for verification rules
+ENTERING_VERIFICATION_RULES = 20
+
 from services.data_storage import data_storage
 from services.reward_system import reward_system
+from utils.verification import verification, VerificationRule
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +351,7 @@ class RewardHandlers:
                 await update.message.reply_text("❌ End time must be after start time. Please try again:")
                 return ENTERING_END_TIME
             
-            # Complete the reward configuration
+            # Store the reward configuration temporarily
             final_config = {
                 **reward_config,
                 'start_time': start_time,
@@ -354,16 +359,129 @@ class RewardHandlers:
                 'status': 'active'
             }
             
-            reward_system.set_reward_config(selected_group_id, final_config)
+            context.user_data['final_reward_config'] = final_config
             
-            # Send confirmation and announcement
-            await RewardHandlers._send_event_confirmation(update, context, final_config, selected_group_id, selected_group_name)
+            # Ask for verification rules
+            await update.message.reply_text(
+                "🔧 **Set Verification Rules (Optional)**\n\n"
+                "Now let's set verification rules for participants. "
+                "You can skip this by typing 'None'.\n\n"
+                "Please provide verification requirements in this format:\n"
+                "**Country: [country name or None], Age: [minimum age or None], NFT: [Penguin/Ape or None]**\n\n"
+                "Examples:\n"
+                "• `Country: USA, Age: 18, NFT: Penguin`\n"
+                "• `Country: None, Age: 21, NFT: None`\n"
+                "• `None` (to skip verification)"
+            )
             
-            return ConversationHandler.END
+            return ENTERING_VERIFICATION_RULES
             
         except ValueError:
             await update.message.reply_text("❌ Invalid date format. Please use YYYY-MM-DD HH:MM format:\nExample: 2024-01-15 18:30")
             return ENTERING_END_TIME
+    
+    @staticmethod
+    async def enter_verification_rules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle verification rules input."""
+        text = update.message.text.strip()
+        selected_group_id = context.user_data.get('selected_group_id')
+        selected_group_name = context.user_data.get('selected_group_name')
+        final_config = context.user_data.get('final_reward_config')
+        
+        # Check if user wants to skip verification
+        if text.lower() == 'none':
+            # Complete without verification rules
+            reward_system.set_reward_config(selected_group_id, final_config)
+            await RewardHandlers._send_event_confirmation(update, context, final_config, selected_group_id, selected_group_name)
+            return ConversationHandler.END
+        
+        # Parse verification rules
+        try:
+            parts = [part.strip() for part in text.split(',')]
+            rule_data = {}
+            
+            for part in parts:
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    if key == 'country':
+                        rule_data['country'] = value if value.lower() != 'none' else None
+                    elif key == 'age':
+                        if value.lower() != 'none':
+                            try:
+                                age = int(value)
+                                rule_data['age'] = age if age >= 0 else None
+                            except ValueError:
+                                rule_data['age'] = None
+                        else:
+                            rule_data['age'] = None
+                    elif key == 'nft':
+                        if value.lower() in ['penguin']:
+                            rule_data['nft_holder'] = 'penguin'
+                        elif value.lower() in ['ape']:
+                            rule_data['nft_holder'] = 'ape'
+                        else:
+                            rule_data['nft_holder'] = None
+            
+            # Create and save verification rule
+            rule = VerificationRule(
+                country=rule_data.get('country'),
+                age=rule_data.get('age'),
+                nft_holder=rule_data.get('nft_holder'),
+                collect_address=True
+            )
+            
+            verification.set_group_rule(selected_group_id, rule)
+            
+            # Complete reward configuration
+            reward_system.set_reward_config(selected_group_id, final_config)
+            
+            # Send confirmation
+            await RewardHandlers._send_combined_confirmation(update, context, final_config, selected_group_id, selected_group_name, rule)
+            
+            return ConversationHandler.END
+            
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ Invalid format. Please use:\n"
+                "Country: [name or None], Age: [number or None], NFT: [Penguin/Ape or None]\n\n"
+                "Or type 'None' to skip verification rules."
+            )
+            return ENTERING_VERIFICATION_RULES
+    
+    @staticmethod
+    async def _send_combined_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                        config: Dict[str, Any], group_id: int, group_name: str, rule: VerificationRule) -> None:
+        """Send combined event and verification confirmation."""
+        # Send confirmation to user
+        confirmation = RewardHandlers._format_confirmation_message(config, group_name)
+        confirmation += "\n\n🔧 **Verification Rules Set:**\n"
+        confirmation += verification.get_verification_requirements_text(group_id)
+        
+        await update.message.reply_text(confirmation)
+        
+        # Send announcement to group
+        try:
+            announcement = reward_system.format_event_announcement(config, group_id)
+            sent_announcement = await context.bot.send_message(chat_id=group_id, text=announcement)
+            
+            # Try to pin the announcement
+            try:
+                await context.bot.pin_chat_message(
+                    chat_id=group_id,
+                    message_id=sent_announcement.message_id,
+                    disable_notification=False
+                )
+                print(f"📌 Event announcement pinned in {group_name} (ID: {group_id})")
+            except Exception as e:
+                print(f"Could not pin announcement in group {group_id}: {e}")
+            
+            print(f"📢 Event announcement sent to {group_name} (ID: {group_id})")
+            
+        except Exception as e:
+            print(f"Failed to send announcement to group {group_id}: {e}")
     
     @staticmethod
     async def _send_event_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE,
@@ -375,7 +493,7 @@ class RewardHandlers:
         
         # Send announcement to group
         try:
-            announcement = reward_system.format_event_announcement(config)
+            announcement = reward_system.format_event_announcement(config, group_id)
             sent_announcement = await context.bot.send_message(chat_id=group_id, text=announcement)
             
             # Try to pin the announcement
