@@ -16,9 +16,11 @@ All operations are performed through the attested ROFL environment for maximum s
 import httpx
 import json
 import logging
+import typing
 from typing import Dict, Any
 from eth_account import Account
 from web3 import Web3
+from web3.types import TxParams
 import time
 
 logger = logging.getLogger(__name__)
@@ -27,37 +29,50 @@ logger = logging.getLogger(__name__)
 class ROFLWalletService:
     """Service for ROFL wallet operations."""
     
-    def __init__(self, rofl_socket_path: str = "/run/rofl-appd.sock"):
-        self.socket_path = rofl_socket_path
+    ROFL_SOCKET_PATH = "/run/rofl-appd.sock"
+    
+    def __init__(self, url: str = ''):
+        self.url = url
         self.web3 = Web3()
     
-    def _appd_post(self, path: str, payload: Any) -> Any:
+    def _appd_post(self, path: str, payload: typing.Any) -> typing.Any:
         """
         Make a POST request to ROFL appd via Unix domain socket.
         
         According to https://docs.oasis.io/build/rofl/features/rest, the API is exposed
         via a UNIX socket at /run/rofl-appd.sock and uses HTTP protocol over the socket.
         """
-        try:
-            transport = httpx.HTTPTransport(uds=self.socket_path)
-            logger.info(f"Using unix domain socket: {self.socket_path}")
-            
-            with httpx.Client(transport=transport) as client:
-                url = "http://localhost"
-                logger.info(f"Posting {json.dumps(payload)} to {url + path}")
-                response = client.post(url + path, json=payload, timeout=30.0)
-                response.raise_for_status()
-                return response.json()
-                
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            raise Exception(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        except httpx.RequestError as e:
-            logger.error(f"Request error: {e}")
-            raise Exception(f"Network error: {str(e)}")
-        except Exception as e:
-            logger.error(f"Unexpected error in _appd_post: {e}")
-            raise
+        transport = None
+        if self.url and not self.url.startswith('http'):
+            transport = httpx.HTTPTransport(uds=self.url)
+            logger.info(f"Using HTTP socket: {self.url}")
+        elif not self.url:
+            transport = httpx.HTTPTransport(uds=self.ROFL_SOCKET_PATH)
+            logger.info(f"Using unix domain socket: {self.ROFL_SOCKET_PATH}")
+
+        client = httpx.Client(transport=transport)
+
+        url = self.url if self.url and self.url.startswith('http') else "http://localhost"
+        logger.info(f"Posting {json.dumps(payload)} to {url+path}")
+        response = client.post(url + path, json=payload, timeout=None)
+        response.raise_for_status()
+        return response.json()
+    
+    def fetch_key(self, id: str) -> str:
+        """
+        Fetch a key from ROFL key generation endpoint.
+        
+        Uses the ROFL key generation endpoint: /rofl/v1/keys/generate (POST)
+        as documented at https://docs.oasis.io/build/rofl/features/rest#key-generation
+        """
+        payload = {
+            "key_id": f"reward_pool_{id}",
+            "kind": "secp256k1"
+        }
+
+        path = '/rofl/v1/keys/generate'
+        response = self._appd_post(path, payload)
+        return response["key"]
     
     def generate_wallet(self, pool_id: str) -> Dict:
         """
@@ -70,15 +85,7 @@ class ROFLWalletService:
         across deployments due to the attested ROFL environment.
         """
         try:
-            payload = {
-                "key_id": f"reward_pool_{pool_id}",
-                "kind": "secp256k1"
-            }
-            
-            path = '/rofl/v1/keys/generate'
-            response = self._appd_post(path, payload)
-            
-            private_key = response["key"]
+            private_key = self.fetch_key(f"reward_pool_{pool_id}")
             wallet_address = self._derive_address(private_key)
             
             return {
@@ -103,25 +110,24 @@ class ROFLWalletService:
         Returns the unique identifier for the current ROFL app instance.
         """
         try:
-            transport = httpx.HTTPTransport(uds=self.socket_path)
-            logger.info(f"Getting app ID via unix domain socket: {self.socket_path}")
-            
-            with httpx.Client(transport=transport) as client:
-                url = "http://localhost"
-                path = '/rofl/v1/app/id'
-                logger.info(f"Getting app ID from {url + path}")
-                response = client.get(url + path, timeout=10.0)
-                response.raise_for_status()
-                return response.text.strip()
+            transport = None
+            if self.url and not self.url.startswith('http'):
+                transport = httpx.HTTPTransport(uds=self.url)
+                logger.info(f"Getting app ID via HTTP socket: {self.url}")
+            elif not self.url:
+                transport = httpx.HTTPTransport(uds=self.ROFL_SOCKET_PATH)
+                logger.info(f"Getting app ID via unix domain socket: {self.ROFL_SOCKET_PATH}")
+
+            client = httpx.Client(transport=transport)
+            url = self.url if self.url and self.url.startswith('http') else "http://localhost"
+            path = '/rofl/v1/app/id'
+            logger.info(f"Getting app ID from {url + path}")
+            response = client.get(url + path, timeout=10.0)
+            response.raise_for_status()
+            return response.text.strip()
                 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error getting app ID: {e.response.status_code} - {e.response.text}")
-            return "unknown"
-        except httpx.RequestError as e:
-            logger.error(f"Request error getting app ID: {e}")
-            return "unknown"
         except Exception as e:
-            logger.error(f"Unexpected error getting app ID: {e}")
+            logger.error(f"Error getting app ID: {e}")
             return "unknown"
     
     def _derive_address(self, private_key: str) -> str:
@@ -153,9 +159,32 @@ class ROFLWalletService:
             logger.error(f"Error getting wallet balance: {e}")
             raise Exception(f"Failed to get balance: {str(e)}")
     
-    def submit_authenticated_tx(self, to_address: str, data: str, value: int = 0) -> Dict:
+    def submit_tx(self, tx: TxParams) -> str:
         """
         Submit authenticated transaction via ROFL.
+        
+        Uses the ROFL authenticated transaction submission endpoint: /rofl/v1/tx/sign-submit (POST)
+        as documented at https://docs.oasis.io/build/rofl/features/rest#authenticated-transaction-submission
+        """
+        payload = {
+            "tx": {
+                "kind": "eth",
+                "data": {
+                    "gas_limit": tx["gas"],
+                    "to": tx["to"].lstrip("0x"),
+                    "value": tx["value"],
+                    "data": tx["data"].lstrip("0x"),
+                },
+            },
+            "encrypt": False,
+        }
+
+        path = '/rofl/v1/tx/sign-submit'
+        return self._appd_post(path, payload)
+    
+    def submit_authenticated_tx(self, to_address: str, data: str, value: int = 0) -> Dict:
+        """
+        Submit authenticated transaction via ROFL (legacy method).
         
         Uses the ROFL authenticated transaction submission endpoint: /rofl/v1/tx/sign-submit (POST)
         as documented at https://docs.oasis.io/build/rofl/features/rest#authenticated-transaction-submission
