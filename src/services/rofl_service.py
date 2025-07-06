@@ -29,10 +29,9 @@ logger = logging.getLogger(__name__)
 class ROFLWalletService:
     """Service for ROFL wallet operations."""
     
-    ROFL_SOCKET_PATH = "/run/rofl-appd.sock"
-    
-    def __init__(self, url: str = ''):
+    def __init__(self, url: str = '', socket_path: str = None):
         self.url = url
+        self.socket_path = socket_path or "/run/rofl-appd.sock"
         self.web3 = Web3()
     
     def _appd_post(self, path: str, payload: typing.Any) -> typing.Any:
@@ -47,8 +46,8 @@ class ROFLWalletService:
             transport = httpx.HTTPTransport(uds=self.url)
             logger.info(f"Using HTTP socket: {self.url}")
         elif not self.url:
-            transport = httpx.HTTPTransport(uds=self.ROFL_SOCKET_PATH)
-            logger.info(f"Using unix domain socket: {self.ROFL_SOCKET_PATH}")
+            transport = httpx.HTTPTransport(uds=self.socket_path)
+            logger.info(f"Using unix domain socket: {self.socket_path}")
 
         client = httpx.Client(transport=transport)
 
@@ -115,8 +114,8 @@ class ROFLWalletService:
                 transport = httpx.HTTPTransport(uds=self.url)
                 logger.info(f"Getting app ID via HTTP socket: {self.url}")
             elif not self.url:
-                transport = httpx.HTTPTransport(uds=self.ROFL_SOCKET_PATH)
-                logger.info(f"Getting app ID via unix domain socket: {self.ROFL_SOCKET_PATH}")
+                transport = httpx.HTTPTransport(uds=self.socket_path)
+                logger.info(f"Getting app ID via unix domain socket: {self.socket_path}")
 
             client = httpx.Client(transport=transport)
             url = self.url if self.url and self.url.startswith('http') else "http://localhost"

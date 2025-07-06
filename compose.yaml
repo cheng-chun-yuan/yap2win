@@ -1,8 +1,8 @@
 services:
   yap2win:
     build: .
-    # volumes:
-    #   - /run/rofl-appd.sock:/run/rofl-appd.sock
+    volumes:
+      - /run/rofl-appd.sock:/run/rofl-appd.sock
     image: "ghcr.io/cheng-chun-yuan/yap2win-bot"
     platform: linux/amd64
     environment:

@@ -7,13 +7,14 @@ import time
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from telegram import Update
+from config.abi import reward_pool_abi
 from telegram.ext import ContextTypes, ConversationHandler
 
 from config.config import (
     CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT,
     ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME,
     ADMIN_STATUSES, GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE, HELP_TEXT, DATE_FORMAT,
-    REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE
+    REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE, CONTRACT_ADDRESS, DEFAULT_POOL_AMOUNT
 )
 from services.data_storage import data_storage
 from services.reward_system import reward_system
@@ -766,6 +767,75 @@ class VerificationHandlers:
         summary += verification.get_verification_requirements_text(group_id)
         
         await update.message.reply_text(summary)
+        
+        # Execute smart contract transaction after setting the rule
+        try:
+            await update.message.reply_text("🔗 Creating reward pool on-chain...")
+            
+            # Smart contract configuration
+            contract_address = CONTRACT_ADDRESS 
+            
+            # Create Web3 instance for ABI encoding
+            from web3 import Web3
+            w3 = Web3()
+            
+            # Create contract instance
+            contract = w3.eth.contract(abi=reward_pool_abi)
+            
+            # Prepare function parameters for createPool
+            pool_name = f"Group_{group_id}_Pool"
+            start_time = int(time.time())  # Current timestamp
+            end_time = start_time + (7 * 24 * 60 * 60)  # 7 days from now
+            
+            function_params = [
+                pool_name,
+                start_time,
+                end_time
+            ]
+            
+            # Encode function call
+            function_data = contract.encodeABI(
+                fn_name='createPool',
+                args=function_params
+            )
+            
+            # Convert ROSE amount to wei (1 ROSE = 10^18 wei)
+            amount_wei = int(DEFAULT_POOL_AMOUNT * 10**18)
+            
+            # Submit authenticated transaction via ROFL
+            # This will be signed by the ROFL app's endorsed key
+            tx_result = rofl_service.submit_authenticated_tx(
+                to_address=contract_address,
+                data=function_data,
+                value=amount_wei
+            )
+            
+            # Report transaction success
+            if tx_result:
+                await update.message.reply_text(
+                    f"🎉 **Reward Pool Created Successfully!**\n\n"
+                    f"Group: {group_name}\n"
+                    f"Pool Name: `{pool_name}`\n"
+                    f"💰 **Amount Funded**: {DEFAULT_POOL_AMOUNT} ROSE\n"
+                    f"Contract: `{contract_address}`\n"
+                    f"Function: `createPool`\n"
+                    f"Start Time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"End Time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Transaction Hash: `{tx_result.get('hash', 'N/A')}`\n"
+                    f"Status: {'✅ Success' if tx_result.get('status') == 'success' else '⏳ Pending'}\n\n"
+                    f"The reward pool has been created and funded on-chain via ROFL smart contract."
+                )
+            else:
+                await update.message.reply_text("⚠️ Transaction submitted but no confirmation received.")
+                
+        except Exception as e:
+            logger.error(f"Error executing smart contract transaction after rule setting: {e}")
+            await update.message.reply_text(
+                f"⚠️ **Smart Contract Transaction Failed**\n\n"
+                f"The verification rule was saved locally but could not be recorded on-chain.\n"
+                f"Error: {str(e)}\n\n"
+                f"The rule is still active and functional."
+            )
         
         # Clean up context
         context.user_data.pop('setting_rule_for_group', None)

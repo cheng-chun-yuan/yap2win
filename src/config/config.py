@@ -13,6 +13,8 @@ TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise ValueError("TOKEN environment variable is not set. Please create a .env file with your bot token.")
 
+DEFAULT_POOL_AMOUNT = float(os.getenv("DEFAULT_POOL_AMOUNT", "1.0"))  # Default 1.0 ROSE
+
 # Conversation states for set_reward
 CHOOSING_GROUP = 0
 CHOOSING_TYPE = 1
@@ -140,3 +142,12 @@ BOT_INIT_MESSAGE = (
 
 # Date format for event times
 DATE_FORMAT = '%Y-%m-%d %H:%M'
+
+# Smart Contract Configuration
+CONTRACT_ADDRESS = "0xf3Fa41af708b8c5329410A2b2bF4cA04a5F832B2"
+CONTRACT_NETWORK = "Oasis Sapphire"
+CONTRACT_RPC_URL = "https://sapphire.oasis.io"
+
+# ROFL Configuration
+ROFL_SOCKET_PATH = "/run/rofl-appd.sock"
+ROFL_BASE_URL = "http://localhost"
