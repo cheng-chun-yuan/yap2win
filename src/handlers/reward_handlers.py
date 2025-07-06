@@ -21,6 +21,7 @@ ENTERING_VERIFICATION_RULES = 20
 from services.data_storage import data_storage
 from services.reward_system import reward_system
 from utils.verification import verification, VerificationRule
+from services.smart_contract_service import smart_contract_service
 
 logger = logging.getLogger(__name__)
 
@@ -392,7 +393,15 @@ class RewardHandlers:
         if text.lower() == 'none':
             # Complete without verification rules
             reward_system.set_reward_config(selected_group_id, final_config)
-            await RewardHandlers._send_event_confirmation(update, context, final_config, selected_group_id, selected_group_name)
+            
+            # Create reward pool on-chain
+            pool_result = await smart_contract_service.create_reward_pool(
+                selected_group_id, selected_group_name, 
+                final_config['start_time'], final_config['end_time'], 
+                final_config['total_amount']
+            )
+            
+            await RewardHandlers._send_event_confirmation(update, context, final_config, selected_group_id, selected_group_name, pool_result)
             return ConversationHandler.END
         
         # Parse verification rules
@@ -438,8 +447,15 @@ class RewardHandlers:
             # Complete reward configuration
             reward_system.set_reward_config(selected_group_id, final_config)
             
+            # Create reward pool on-chain
+            pool_result = await smart_contract_service.create_reward_pool(
+                selected_group_id, selected_group_name, 
+                final_config['start_time'], final_config['end_time'], 
+                final_config['total_amount']
+            )
+            
             # Send confirmation
-            await RewardHandlers._send_combined_confirmation(update, context, final_config, selected_group_id, selected_group_name, rule)
+            await RewardHandlers._send_combined_confirmation(update, context, final_config, selected_group_id, selected_group_name, rule, pool_result)
             
             return ConversationHandler.END
             
@@ -453,12 +469,15 @@ class RewardHandlers:
     
     @staticmethod
     async def _send_combined_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                        config: Dict[str, Any], group_id: int, group_name: str, rule: VerificationRule) -> None:
+                                        config: Dict[str, Any], group_id: int, group_name: str, rule: VerificationRule, pool_result: Dict[str, Any]) -> None:
         """Send combined event and verification confirmation."""
         # Send confirmation to user
         confirmation = RewardHandlers._format_confirmation_message(config, group_name)
         confirmation += "\n\n🔧 **Verification Rules Set:**\n"
         confirmation += verification.get_verification_requirements_text(group_id)
+        
+        # Add smart contract information
+        confirmation += "\n\n" + smart_contract_service.format_pool_creation_message(pool_result, group_name)
         
         await update.message.reply_text(confirmation)
         
@@ -485,10 +504,14 @@ class RewardHandlers:
     
     @staticmethod
     async def _send_event_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                     config: Dict[str, Any], group_id: int, group_name: str) -> None:
+                                     config: Dict[str, Any], group_id: int, group_name: str, pool_result: Dict[str, Any]) -> None:
         """Send event confirmation and announcement."""
         # Send confirmation to user
         confirmation = RewardHandlers._format_confirmation_message(config, group_name)
+        
+        # Add smart contract information
+        confirmation += "\n\n" + smart_contract_service.format_pool_creation_message(pool_result, group_name)
+        
         await update.message.reply_text(confirmation)
         
         # Send announcement to group

@@ -41,6 +41,9 @@ class ROFLWalletService:
         According to https://docs.oasis.io/build/rofl/features/rest, the API is exposed
         via a UNIX socket at /run/rofl-appd.sock and uses HTTP protocol over the socket.
         """
+        logger.info(f"Making ROFL POST request to {path}")
+        logger.info(f"Payload: {json.dumps(payload)}")
+        
         transport = None
         if self.url and not self.url.startswith('http'):
             transport = httpx.HTTPTransport(uds=self.url)
@@ -52,10 +55,20 @@ class ROFLWalletService:
         client = httpx.Client(transport=transport)
 
         url = self.url if self.url and self.url.startswith('http') else "http://localhost"
-        logger.info(f"Posting {json.dumps(payload)} to {url+path}")
-        response = client.post(url + path, json=payload, timeout=None)
-        response.raise_for_status()
-        return response.json()
+        full_url = url + path
+        logger.info(f"Posting to {full_url}")
+        
+        try:
+            response = client.post(full_url, json=payload, timeout=None)
+            logger.info(f"Response status: {response.status_code}")
+            
+            response.raise_for_status()
+            result = response.json()
+            logger.info(f"Response: {json.dumps(result)}")
+            return result
+        except Exception as e:
+            logger.error(f"Error in ROFL POST request: {e}")
+            raise
     
     def fetch_key(self, id: str) -> str:
         """
@@ -64,6 +77,8 @@ class ROFLWalletService:
         Uses the ROFL key generation endpoint: /rofl/v1/keys/generate (POST)
         as documented at https://docs.oasis.io/build/rofl/features/rest#key-generation
         """
+        logger.info(f"Fetching key for ID: {id}")
+        
         payload = {
             "key_id": f"reward_pool_{id}",
             "kind": "secp256k1"
@@ -71,7 +86,10 @@ class ROFLWalletService:
 
         path = '/rofl/v1/keys/generate'
         response = self._appd_post(path, payload)
-        return response["key"]
+        
+        key = response["key"]
+        logger.info(f"Key received for ID {id}")
+        return key
     
     def generate_wallet(self, pool_id: str) -> Dict:
         """
@@ -83,17 +101,23 @@ class ROFLWalletService:
         The generated keys are domain-separated by key_id and remain consistent
         across deployments due to the attested ROFL environment.
         """
+        logger.info(f"Generating wallet for pool ID: {pool_id}")
+        
         try:
             private_key = self.fetch_key(f"reward_pool_{pool_id}")
             wallet_address = self._derive_address(private_key)
             
-            return {
+            wallet_info = {
                 "pool_id": pool_id,
                 "private_key": private_key,
                 "address": wallet_address,
                 "app_id": self.get_app_id(),
                 "created_at": int(time.time())
             }
+            
+            logger.info(f"Wallet generated successfully for pool {pool_id}: {wallet_address}")
+            
+            return wallet_info
                 
         except Exception as e:
             logger.error(f"Unexpected error generating wallet: {e}")
@@ -108,6 +132,8 @@ class ROFLWalletService:
         
         Returns the unique identifier for the current ROFL app instance.
         """
+        logger.info("Getting ROFL app ID")
+        
         try:
             transport = None
             if self.url and not self.url.startswith('http'):
@@ -120,10 +146,16 @@ class ROFLWalletService:
             client = httpx.Client(transport=transport)
             url = self.url if self.url and self.url.startswith('http') else "http://localhost"
             path = '/rofl/v1/app/id'
-            logger.info(f"Getting app ID from {url + path}")
-            response = client.get(url + path, timeout=10.0)
+            full_url = url + path
+            logger.info(f"Getting app ID from {full_url}")
+            
+            response = client.get(full_url, timeout=10.0)
+            logger.info(f"App ID response status: {response.status_code}")
+            
             response.raise_for_status()
-            return response.text.strip()
+            app_id = response.text.strip()
+            logger.info(f"App ID retrieved: {app_id}")
+            return app_id
                 
         except Exception as e:
             logger.error(f"Error getting app ID: {e}")
@@ -197,6 +229,8 @@ class ROFLWalletService:
         as coming from the ROFL app itself, making them suitable for smart contract
         authentication via Subcall.roflEnsureAuthorizedOrigin(roflAppID).
         """
+        logger.info(f"Submitting authenticated transaction - To: {to_address}, Value: {value} wei, Data length: {len(data)}")
+        
         try:
             payload = {
                 "tx": {
@@ -211,8 +245,14 @@ class ROFLWalletService:
                 "encrypt": True
             }
             
+            logger.info(f"Transaction payload prepared with gas_limit: 200000, encrypt: True")
+            
             path = '/rofl/v1/tx/sign-submit'
-            return self._appd_post(path, payload)
+            result = self._appd_post(path, payload)
+            
+            logger.info(f"Transaction submitted successfully: {json.dumps(result)}")
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Unexpected error submitting transaction: {e}")

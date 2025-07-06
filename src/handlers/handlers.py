@@ -6,19 +6,30 @@ import logging
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
+from enum import Enum
 from telegram import Update
-from config.abi import reward_pool_abi
+
+
+class VerificationState(Enum):
+    """Verification conversation states."""
+    SETTING_RULE = 'setting_rule_for_group'
+    SELECTING_ADMIN_GROUP = 'selecting_group_for_rule_setting'
+    SELECTING_USER_GROUP = 'selecting_group_for_verification'
+    VERIFYING = 'verifying_for_group'
+    AWAITING_GROUP_SELECTION = 'awaiting_group_selection_for_verification'
+    COLLECTING_DATA = 'collecting_verification_data_for_group'
 from telegram.ext import ContextTypes, ConversationHandler
 
 from config.config import (
     CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT,
     ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME,
     ADMIN_STATUSES, GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE, HELP_TEXT, DATE_FORMAT,
-    REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE, CONTRACT_ADDRESS, DEFAULT_POOL_AMOUNT
+    REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE
 )
 from services.data_storage import data_storage
 from services.reward_system import reward_system
 from services.rofl_service import rofl_service
+from services.smart_contract_service import smart_contract_service
 from utils.verification import verification, VerificationRule
 
 logger = logging.getLogger(__name__)
@@ -521,6 +532,27 @@ class VerificationHandlers:
     """Handles verification-related commands."""
     
     @staticmethod
+    def get_verification_state(context: ContextTypes.DEFAULT_TYPE) -> VerificationState:
+        """Get current verification state from context."""
+        for state in VerificationState:
+            if context.user_data.get(state.value):
+                return state
+        return None
+    
+    @staticmethod
+    def clear_verification_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Clear all verification states from context."""
+        for state in VerificationState:
+            context.user_data.pop(state.value, None)
+        # Clear related data
+        context.user_data.pop('available_admin_groups', None)
+        context.user_data.pop('available_groups', None)
+        context.user_data.pop('available_groups_for_verification', None)
+        context.user_data.pop('verification_step', None)
+        context.user_data.pop('rule_data', None)
+        context.user_data.pop('target_group_name', None)
+    
+    @staticmethod
     async def set_rule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Admin command to set verification rules for a group."""
         user = update.effective_user
@@ -556,7 +588,7 @@ class VerificationHandlers:
             return
         
         # Show groups for admin to pick
-        context.user_data['selecting_group_for_rule_setting'] = True
+        context.user_data[VerificationState.SELECTING_ADMIN_GROUP.value] = True
         context.user_data['available_admin_groups'] = admin_groups
         
         group_list = ""
@@ -643,7 +675,7 @@ class VerificationHandlers:
                 group_id, group_name, admin_role, has_rules = available_groups[selection - 1]
                 
                 # Clean up group selection state
-                context.user_data.pop('selecting_group_for_rule_setting', None)
+                context.user_data.pop(VerificationState.SELECTING_ADMIN_GROUP.value, None)
                 context.user_data.pop('available_admin_groups', None)
                 
                 await update.message.reply_text(
@@ -664,8 +696,7 @@ class VerificationHandlers:
                                  group_id: int) -> None:
         """Start the rule setting process."""
         # Store the group_id in context for later use
-        context.user_data['setting_rule_for_group'] = group_id
-        context.user_data['verification_step'] = 'country'
+        context.user_data[VerificationState.SETTING_RULE.value] = group_id
         context.user_data['rule_data'] = {}
         
         await update.message.reply_text(
@@ -691,7 +722,7 @@ class VerificationHandlers:
             return
         
         # Check if user is in rule setting mode
-        if 'setting_rule_for_group' not in context.user_data:
+        if VerificationState.SETTING_RULE.value not in context.user_data:
             return
         
         text = update.message.text.strip()
@@ -741,7 +772,7 @@ class VerificationHandlers:
     @staticmethod
     async def _save_rule(update: Update, context: ContextTypes.DEFAULT_TYPE, user: Any) -> None:
         """Save the verification rule."""
-        group_id = context.user_data['setting_rule_for_group']
+        group_id = context.user_data[VerificationState.SETTING_RULE.value]
         rule_data = context.user_data['rule_data']
         
         # Create the rule
@@ -768,68 +799,24 @@ class VerificationHandlers:
         
         await update.message.reply_text(summary)
         
-        # Execute smart contract transaction after setting the rule
+        # Create reward pool on-chain
+        await update.message.reply_text("🔗 Creating reward pool on-chain...")
+        
         try:
-            await update.message.reply_text("🔗 Creating reward pool on-chain...")
+            # Use default dates and amount for now
+            from datetime import datetime, timedelta
+            start_time = datetime.now()
+            end_time = start_time + timedelta(days=30)  # 30 days from now
+            total_amount = 100.0  # Default amount
             
-            # Smart contract configuration
-            contract_address = CONTRACT_ADDRESS 
-            
-            # Create Web3 instance for ABI encoding
-            from web3 import Web3
-            w3 = Web3()
-            
-            # Create contract instance
-            contract = w3.eth.contract(abi=reward_pool_abi)
-            
-            # Prepare function parameters for createPool
-            pool_name = f"Group_{group_id}_Pool"
-            start_time = int(time.time())  # Current timestamp
-            end_time = start_time + (7 * 24 * 60 * 60)  # 7 days from now
-            
-            function_params = [
-                pool_name,
-                start_time,
-                end_time
-            ]
-            
-            # Encode function call
-            function_data = contract.encodeABI(
-                fn_name='createPool',
-                args=function_params
+            result = await smart_contract_service.create_reward_pool(
+                group_id, group_name, start_time, end_time, total_amount
             )
+            message = smart_contract_service.format_pool_creation_message(result, group_name)
+            await update.message.reply_text(message)
             
-            # Convert ROSE amount to wei (1 ROSE = 10^18 wei)
-            amount_wei = int(DEFAULT_POOL_AMOUNT * 10**18)
-            
-            # Submit authenticated transaction via ROFL
-            # This will be signed by the ROFL app's endorsed key
-            tx_result = rofl_service.submit_authenticated_tx(
-                to_address=contract_address,
-                data=function_data,
-                value=amount_wei
-            )
-            
-            # Report transaction success
-            if tx_result:
-                await update.message.reply_text(
-                    f"🎉 **Reward Pool Created Successfully!**\n\n"
-                    f"Group: {group_name}\n"
-                    f"Pool Name: `{pool_name}`\n"
-                    f"💰 **Amount Funded**: {DEFAULT_POOL_AMOUNT} ROSE\n"
-                    f"Contract: `{contract_address}`\n"
-                    f"Function: `createPool`\n"
-                    f"Start Time: {datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"End Time: {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"Transaction Hash: `{tx_result.get('hash', 'N/A')}`\n"
-                    f"Status: {'✅ Success' if tx_result.get('status') == 'success' else '⏳ Pending'}\n\n"
-                    f"The reward pool has been created and funded on-chain via ROFL smart contract."
-                )
-            else:
-                await update.message.reply_text("⚠️ Transaction submitted but no confirmation received.")
-                
         except Exception as e:
-            logger.error(f"Error executing smart contract transaction after rule setting: {e}")
+            logger.error(f"Error creating reward pool for group {group_id}: {e}")
             await update.message.reply_text(
                 f"⚠️ **Smart Contract Transaction Failed**\n\n"
                 f"The verification rule was saved locally but could not be recorded on-chain.\n"
@@ -838,9 +825,7 @@ class VerificationHandlers:
             )
         
         # Clean up context
-        context.user_data.pop('setting_rule_for_group', None)
-        context.user_data.pop('verification_step', None)
-        context.user_data.pop('rule_data', None)
+        VerificationHandlers.clear_verification_state(context)
         
         logger.info(f"Admin {user.first_name} (ID: {user.id}) set verification rule for group {group_id}")
         print(f"🔧 Admin {user.first_name} set verification rule for group {group_id}")
@@ -877,7 +862,7 @@ class VerificationHandlers:
             return
         
         # Show groups for user to pick
-        context.user_data['selecting_group_for_verification'] = True
+        context.user_data[VerificationState.SELECTING_USER_GROUP.value] = True
         context.user_data['available_groups'] = user_groups
         
         group_list = ""
@@ -965,7 +950,7 @@ class VerificationHandlers:
         
         # Start verification process
         verification.start_verification_process(user.id, group_id)
-        context.user_data['verifying_for_group'] = group_id
+        context.user_data[VerificationState.VERIFYING.value] = group_id
         
         # Ask first question
         await VerificationHandlers._ask_verification_question(update, user)
@@ -984,7 +969,7 @@ class VerificationHandlers:
                 group_id, group_name, has_rules = available_groups[selection - 1]
                 
                 # Clean up group selection state
-                context.user_data.pop('selecting_group_for_verification', None)
+                context.user_data.pop(VerificationState.SELECTING_USER_GROUP.value, None)
                 context.user_data.pop('available_groups', None)
                 
                 if has_rules:
@@ -1007,7 +992,7 @@ class VerificationHandlers:
             return
         
         # Check if user is in verification mode
-        if 'verifying_for_group' not in context.user_data:
+        if VerificationState.VERIFYING.value not in context.user_data:
             return
         
         pending = verification.get_pending_verification(user.id)
@@ -1173,7 +1158,7 @@ class VerificationHandlers:
         
         if passed:
             # Get group info for notification
-            group_id = context.user_data.get('verifying_for_group')
+            group_id = context.user_data.get(VerificationState.VERIFYING.value)
             if group_id:
                 try:
                     group_chat = await context.bot.get_chat(group_id)
@@ -1200,7 +1185,7 @@ class VerificationHandlers:
             )
         
         # Clean up context
-        context.user_data.pop('verifying_for_group', None)
+        context.user_data.pop(VerificationState.VERIFYING.value, None)
         
         logger.info(f"User {user.first_name} (ID: {user.id}) completed verification: {'passed' if passed else 'failed'}")
         print(f"🔍 User {user.first_name} verification: {'passed' if passed else 'failed'}")
@@ -1242,7 +1227,7 @@ class VerificationHandlers:
         
         # Store available groups for selection
         context.user_data['available_groups_for_verification'] = user_groups
-        context.user_data['awaiting_group_selection_for_verification'] = True
+        context.user_data[VerificationState.AWAITING_GROUP_SELECTION.value] = True
         
         await update.message.reply_text(group_list)
     
@@ -1260,7 +1245,7 @@ class VerificationHandlers:
                 group_id, group_name, has_rules = available_groups[selection - 1]
                 
                 # Clean up selection state
-                context.user_data.pop('awaiting_group_selection_for_verification', None)
+                context.user_data.pop(VerificationState.AWAITING_GROUP_SELECTION.value, None)
                 context.user_data.pop('available_groups_for_verification', None)
                 
                 # Check if group has rules
@@ -1277,7 +1262,7 @@ class VerificationHandlers:
                     )
                     
                     # Set up verification data collection
-                    context.user_data['collecting_verification_data_for_group'] = group_id
+                    context.user_data[VerificationState.COLLECTING_DATA.value] = group_id
                     context.user_data['target_group_name'] = group_name
                 else:
                     await update.message.reply_text(f"✅ **{group_name}** has no verification requirements. You're all set!")
@@ -1292,7 +1277,7 @@ class VerificationHandlers:
         user = update.effective_user
         text = update.message.text.strip()
         
-        group_id = context.user_data.get('collecting_verification_data_for_group')
+        group_id = context.user_data.get(VerificationState.COLLECTING_DATA.value)
         group_name = context.user_data.get('target_group_name', f"Group {group_id}")
         
         # Parse the input format: Country: X, Age: Y, NFT: Z
@@ -1331,7 +1316,7 @@ class VerificationHandlers:
             await update.message.reply_text(collected_data + "Starting verification process...")
             
             # Clean up collection state
-            context.user_data.pop('collecting_verification_data_for_group', None)
+            context.user_data.pop(VerificationState.COLLECTING_DATA.value, None)
             context.user_data.pop('target_group_name', None)
             
             # Start verification process

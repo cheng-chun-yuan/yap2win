@@ -13,7 +13,7 @@ from services.data_storage import data_storage
 from services.reward_system import reward_system
 from services.deepeval_scoring import deepeval_scorer
 from utils.verification import verification
-from handlers.handlers import VerificationHandlers
+from handlers.handlers import VerificationHandlers, VerificationState
 
 logger = logging.getLogger(__name__)
 
@@ -69,23 +69,25 @@ class MessageProcessor:
         
         # Handle verification in private chat
         if chat.type == PRIVATE_CHAT_TYPE:
-            # Check for verification conversations
-            if context.user_data.get('setting_rule_for_group'):
+            # Check for verification conversations using enum
+            verification_state = VerificationHandlers.get_verification_state(context)
+            
+            if verification_state == VerificationState.SETTING_RULE:
                 await VerificationHandlers.handle_rule_setting(update, context)
                 return
-            elif context.user_data.get('selecting_group_for_rule_setting'):
+            elif verification_state == VerificationState.SELECTING_ADMIN_GROUP:
                 await VerificationHandlers.handle_admin_group_selection(update, context)
                 return
-            elif context.user_data.get('selecting_group_for_verification'):
+            elif verification_state == VerificationState.SELECTING_USER_GROUP:
                 await VerificationHandlers.handle_group_selection(update, context)
                 return
-            elif context.user_data.get('verifying_for_group'):
+            elif verification_state == VerificationState.VERIFYING:
                 await VerificationHandlers.handle_verification(update, context)
                 return
-            elif context.user_data.get('awaiting_group_selection_for_verification'):
+            elif verification_state == VerificationState.AWAITING_GROUP_SELECTION:
                 await VerificationHandlers.handle_group_selection_for_verification(update, context)
                 return
-            elif context.user_data.get('collecting_verification_data_for_group'):
+            elif verification_state == VerificationState.COLLECTING_DATA:
                 await VerificationHandlers.handle_verification_data_collection(update, context)
                 return
             elif verification.is_verification_message(text):
