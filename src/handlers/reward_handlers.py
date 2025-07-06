@@ -11,12 +11,11 @@ from telegram.ext import ContextTypes, ConversationHandler
 from config.config import (
     CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT,
     ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME,
+    ENTERING_VERIFICATION_RULES, ENTERING_VERIFICATION_COUNTRY, 
+    ENTERING_VERIFICATION_AGE, ENTERING_VERIFICATION_NFT,
     ADMIN_STATUSES, PRIVATE_CHAT_TYPE, DATE_FORMAT,
     REWARD_TYPE_POOL, REWARD_TYPE_RANK
 )
-
-# Add new state for verification rules
-ENTERING_VERIFICATION_RULES = 20
 
 from services.data_storage import data_storage
 from services.reward_system import reward_system
@@ -186,7 +185,7 @@ class RewardHandlers:
                 f"🏆 Pool Reward for {selected_group_name}\n\n"
                 f"Total Amount: {total_amount}\n\n"
                 f"Enter the start time (YYYY-MM-DD HH:MM):\n"
-                f"Example: 2024-01-15 14:30"
+                f"Example: 2025-07-05 14:30"
             )
             
             return ENTERING_START_TIME
@@ -247,7 +246,7 @@ class RewardHandlers:
                 f"Total Amount: {total_amount}\n"
                 f"Default Distribution:\n{rank_text}\n\n"
                 f"Enter the start time (YYYY-MM-DD HH:MM):\n"
-                f"Example: 2024-01-15 14:30"
+                f"Example: 2025-07-05 14:30"
             )
             
             return ENTERING_START_TIME
@@ -327,7 +326,7 @@ class RewardHandlers:
                 f"Group: {selected_group_name}\n"
                 f"Start Time: {start_time.strftime(DATE_FORMAT)}\n\n"
                 f"Enter the end time (YYYY-MM-DD HH:MM):\n"
-                f"Example: 2024-01-15 18:30"
+                f"Example: 2025-07-05 14:30"
             )
             
             return ENTERING_END_TIME
@@ -365,14 +364,11 @@ class RewardHandlers:
             # Ask for verification rules
             await update.message.reply_text(
                 "🔧 **Set Verification Rules (Optional)**\n\n"
-                "Now let's set verification rules for participants. "
-                "You can skip this by typing 'None'.\n\n"
-                "Please provide verification requirements in this format:\n"
-                "**Country: [country name or None], Age: [minimum age or None], NFT: [Penguin/Ape or None]**\n\n"
-                "Examples:\n"
-                "• `Country: USA, Age: 18, NFT: Penguin`\n"
-                "• `Country: None, Age: 21, NFT: None`\n"
-                "• `None` (to skip verification)"
+                "Verification uses Self.xyz identity verification and wallet address collection.\n\n"
+                "Users will be asked to:\n"
+                "1. Complete identity verification via Self.xyz link\n"
+                "2. Provide their wallet address for rewards\n\n"
+                "Type 'confirm' to enable verification or 'None' to skip."
             )
             
             return ENTERING_VERIFICATION_RULES
@@ -404,68 +400,141 @@ class RewardHandlers:
             await RewardHandlers._send_event_confirmation(update, context, final_config, selected_group_id, selected_group_name, pool_result)
             return ConversationHandler.END
         
-        # Parse verification rules
-        try:
-            parts = [part.strip() for part in text.split(',')]
-            rule_data = {}
+        # Check if user confirms verification setup
+        if text.lower() == 'confirm':
+            # Start detailed verification setup
+            context.user_data['verification_setup'] = {
+                'country': None,
+                'age': None,
+                'nft_holder': None,
+                'collect_address': True
+            }
             
-            for part in parts:
-                if ':' in part:
-                    key, value = part.split(':', 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-                    
-                    if key == 'country':
-                        rule_data['country'] = value if value.lower() != 'none' else None
-                    elif key == 'age':
-                        if value.lower() != 'none':
-                            try:
-                                age = int(value)
-                                rule_data['age'] = age if age >= 0 else None
-                            except ValueError:
-                                rule_data['age'] = None
-                        else:
-                            rule_data['age'] = None
-                    elif key == 'nft':
-                        if value.lower() in ['penguin']:
-                            rule_data['nft_holder'] = 'penguin'
-                        elif value.lower() in ['ape']:
-                            rule_data['nft_holder'] = 'ape'
-                        else:
-                            rule_data['nft_holder'] = None
-            
-            # Create and save verification rule
-            rule = VerificationRule(
-                country=rule_data.get('country'),
-                age=rule_data.get('age'),
-                nft_holder=rule_data.get('nft_holder'),
-                collect_address=True
-            )
-            
-            verification.set_group_rule(selected_group_id, rule)
-            
-            # Complete reward configuration
-            reward_system.set_reward_config(selected_group_id, final_config)
-            
-            # Create reward pool on-chain
-            pool_result = await smart_contract_service.create_reward_pool(
-                selected_group_id, selected_group_name, 
-                final_config['start_time'], final_config['end_time'], 
-                final_config['total_amount']
-            )
-            
-            # Send confirmation
-            await RewardHandlers._send_combined_confirmation(update, context, final_config, selected_group_id, selected_group_name, rule, pool_result)
-            
-            return ConversationHandler.END
-            
-        except Exception as e:
             await update.message.reply_text(
-                "❌ Invalid format. Please use:\n"
-                "Country: [name or None], Age: [number or None], NFT: [Penguin/Ape or None]\n\n"
-                "Or type 'None' to skip verification rules."
+                "🔧 **Verification Setup**\n\n"
+                "Let's configure verification requirements:\n\n"
+                "**Country Requirement:**\n"
+                "Enter a country code (e.g., 'US', 'CA', 'UK') or 'None' to skip country restriction:\n"
+                "Example: US, CA, UK, None"
             )
-            return ENTERING_VERIFICATION_RULES
+            
+            return ENTERING_VERIFICATION_COUNTRY
+        
+        # Invalid input
+        await update.message.reply_text(
+            "❌ Please type 'confirm' to enable verification or 'None' to skip."
+        )
+        return ENTERING_VERIFICATION_RULES
+    
+    @staticmethod
+    async def enter_verification_country(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle country requirement input."""
+        text = update.message.text.strip()
+        verification_setup = context.user_data.get('verification_setup', {})
+        
+        if text.lower() == 'none':
+            verification_setup['country'] = None
+        else:
+            # Validate country code (simple validation)
+            country_code = text.upper()
+            if len(country_code) == 2 and country_code.isalpha():
+                verification_setup['country'] = country_code
+            else:
+                await update.message.reply_text(
+                    "❌ Please enter a valid 2-letter country code (e.g., 'US', 'CA', 'UK') or 'None' to skip:"
+                )
+                return ENTERING_VERIFICATION_COUNTRY
+        
+        context.user_data['verification_setup'] = verification_setup
+        
+        await update.message.reply_text(
+            "🔧 **Age Requirement:**\n\n"
+            "Enter minimum age requirement or 'None' to skip age restriction:\n"
+            "Example: 18, 21, None"
+        )
+        
+        return ENTERING_VERIFICATION_AGE
+    
+    @staticmethod
+    async def enter_verification_age(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle age requirement input."""
+        text = update.message.text.strip()
+        verification_setup = context.user_data.get('verification_setup', {})
+        
+        if text.lower() == 'none':
+            verification_setup['age'] = None
+        else:
+            try:
+                age = int(text)
+                if age < 0 or age > 120:
+                    await update.message.reply_text(
+                        "❌ Please enter a valid age (0-120) or 'None' to skip:"
+                    )
+                    return ENTERING_VERIFICATION_AGE
+                verification_setup['age'] = age
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ Please enter a valid number for age or 'None' to skip:"
+                )
+                return ENTERING_VERIFICATION_AGE
+        
+        context.user_data['verification_setup'] = verification_setup
+        
+        await update.message.reply_text(
+            "🔧 **NFT Holder Requirement:**\n\n"
+            "Enter NFT requirement or 'None' to skip NFT restriction:\n"
+            "Options:\n"
+            "• 'None' - No NFT required\n"
+            "• 'Yes' - Any NFT holder\n"
+            "• Specific NFT name (e.g., 'Ape', 'CryptoPunk', 'Penguins')\n"
+            "Example: None, Penguins, Ape"
+        )
+        
+        return ENTERING_VERIFICATION_NFT
+    
+    @staticmethod
+    async def enter_verification_nft(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle NFT requirement input and complete verification setup."""
+        text = update.message.text.strip()
+        verification_setup = context.user_data.get('verification_setup', {})
+        selected_group_id = context.user_data.get('selected_group_id')
+        selected_group_name = context.user_data.get('selected_group_name')
+        final_config = context.user_data.get('final_reward_config')
+        
+        if text.lower() == 'none':
+            verification_setup['nft_holder'] = None
+        elif text.lower() == 'yes':
+            verification_setup['nft_holder'] = True
+        else:
+            # Specific NFT requirement
+            verification_setup['nft_holder'] = text
+        
+        context.user_data['verification_setup'] = verification_setup
+        
+        # Create verification rule
+        rule = VerificationRule(
+            country=verification_setup['country'],
+            age=verification_setup['age'],
+            nft_holder=verification_setup['nft_holder'],
+            collect_address=verification_setup['collect_address']
+        )
+        
+        verification.set_group_rule(selected_group_id, rule)
+        
+        # Complete reward configuration
+        reward_system.set_reward_config(selected_group_id, final_config)
+        
+        # Create reward pool on-chain
+        pool_result = await smart_contract_service.create_reward_pool(
+            selected_group_id, selected_group_name, 
+            final_config['start_time'], final_config['end_time'], 
+            final_config['total_amount']
+        )
+        
+        # Send confirmation
+        await RewardHandlers._send_combined_confirmation(update, context, final_config, selected_group_id, selected_group_name, rule, pool_result)
+        
+        return ConversationHandler.END
     
     @staticmethod
     async def _send_combined_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE,

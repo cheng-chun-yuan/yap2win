@@ -18,14 +18,13 @@ class VerificationState(Enum):
     SELECTING_USER_GROUP = 'selecting_group_for_verification'
     VERIFYING = 'verifying_for_group'
     AWAITING_GROUP_SELECTION = 'awaiting_group_selection_for_verification'
-    COLLECTING_DATA = 'collecting_verification_data_for_group'
 from telegram.ext import ContextTypes, ConversationHandler
 
 from config.config import (
     CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT,
     ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME,
     ADMIN_STATUSES, GROUP_CHAT_TYPES, PRIVATE_CHAT_TYPE, HELP_TEXT, DATE_FORMAT,
-    REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE
+    REWARD_TYPE_POOL, REWARD_TYPE_RANK, BOT_INIT_MESSAGE, CONTRACT_ADDRESS, DEFAULT_POOL_AMOUNT
 )
 from services.data_storage import data_storage
 from services.reward_system import reward_system
@@ -717,14 +716,11 @@ class VerificationHandlers:
         
         await update.message.reply_text(
             "🔧 **Setting Verification Rules**\n\n"
-            "I'll collect all verification requirements in one go. "
-            "You can type 'None' to skip any requirement.\n\n"
-            "Please provide your requirements in this format:\n"
-            "**Country: [country name or None]**\n"
-            "**Age: [minimum age or None]**\n"
-            "**NFT: [Penguin/Ape or None]**\n\n"
-            "Example: Country: USA, Age: 18, NFT: Penguin\n"
-            "Or: Country: None, Age: 21, NFT: None"
+            "Verification uses Self.xyz identity verification and wallet address collection.\n\n"
+            "Users will be asked to:\n"
+            "1. Complete identity verification via Self.xyz link\n"
+            "2. Provide their wallet address for rewards\n\n"
+            "Type 'confirm' to set up verification for this group."
         )
     
     @staticmethod
@@ -741,48 +737,22 @@ class VerificationHandlers:
         if VerificationState.SETTING_RULE.value not in context.user_data:
             return
         
-        text = update.message.text.strip()
+        text = update.message.text.strip().lower()
         
-        # Parse the input format: Country: X, Age: Y, NFT: Z
-        try:
-            # Split by comma and parse each part
-            parts = [part.strip() for part in text.split(',')]
-            rule_data = {}
+        if text == 'confirm':
+            # Set up default verification rule with Self.xyz and wallet address
+            rule_data = {
+                'country': None,
+                'age': None,
+                'nft_holder': None,
+                'collect_address': True
+            }
             
-            for part in parts:
-                if ':' in part:
-                    key, value = part.split(':', 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-                    
-                    if key == 'country':
-                        rule_data['country'] = value if value.lower() != 'none' else None
-                    elif key == 'age':
-                        if value.lower() != 'none':
-                            try:
-                                age = int(value)
-                                rule_data['age'] = age if age >= 0 else None
-                            except ValueError:
-                                rule_data['age'] = None
-                        else:
-                            rule_data['age'] = None
-                    elif key == 'nft':
-                        if value.lower() in ['penguin']:
-                            rule_data['nft_holder'] = 'penguin'
-                        elif value.lower() in ['ape']:
-                            rule_data['nft_holder'] = 'ape'
-                        else:
-                            rule_data['nft_holder'] = None
-            
-            # Save parsed data
             context.user_data['rule_data'] = rule_data
             await VerificationHandlers._save_rule(update, context, user)
-            
-        except Exception as e:
+        else:
             await update.message.reply_text(
-                "❌ Invalid format. Please use:\n"
-                "Country: [name or None], Age: [number or None], NFT: [Penguin/Ape or None]\n\n"
-                "Example: Country: USA, Age: 18, NFT: Penguin"
+                "❌ Please type 'confirm' to set up verification for this group."
             )
     
     @staticmethod
@@ -1263,7 +1233,7 @@ class VerificationHandlers:
                 "You're not in any groups that require verification yet. "
                 "Join a group where the bot is active and try again.\n\n"
                 "If you know the group ID, you can use:\n"
-                "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`"
+                "`/verify [group_id]`"
             )
             return
         
@@ -1280,10 +1250,10 @@ class VerificationHandlers:
         group_list += f"Reply with a number (1-{len(user_groups)}) to select a group\n\n"
         
         group_list += "**Option 2: Direct Format**\n"
-        group_list += "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`\n\n"
+        group_list += "`/verify [group_id]`\n\n"
         
         group_list += "**Example:**\n"
-        group_list += f"`/verify Country: USA, Age: 25, NFT: Penguin, Group: {user_groups[0][0]}`"
+        group_list += f"`/verify {user_groups[0][0]}`"
         
         # Store available groups for selection
         context.user_data['available_groups_for_verification'] = user_groups
@@ -1316,14 +1286,11 @@ class VerificationHandlers:
                     await update.message.reply_text(
                         f"🔍 **Selected: {group_name}**\n\n"
                         f"{requirements_text}\n\n"
-                        "Now provide your verification information in this format:\n"
-                        "`Country: [country], Age: [age], NFT: [Penguin/Ape/None]`\n\n"
-                        "Example: `Country: USA, Age: 25, NFT: Penguin`"
+                        "Starting verification process..."
                     )
                     
-                    # Set up verification data collection
-                    context.user_data[VerificationState.COLLECTING_DATA.value] = group_id
-                    context.user_data['target_group_name'] = group_name
+                    # Start verification process directly
+                    await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
                 else:
                     await update.message.reply_text(f"✅ **{group_name}** has no verification requirements. You're all set!")
             else:
@@ -1331,64 +1298,6 @@ class VerificationHandlers:
         except ValueError:
             await update.message.reply_text(f"❌ Please enter a valid number between 1 and {len(available_groups)}:")
     
-    @staticmethod
-    async def handle_verification_data_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle collecting verification data after group selection."""
-        user = update.effective_user
-        text = update.message.text.strip()
-        
-        group_id = context.user_data.get(VerificationState.COLLECTING_DATA.value)
-        group_name = context.user_data.get('target_group_name', f"Group {group_id}")
-        
-        # Parse the input format: Country: X, Age: Y, NFT: Z
-        try:
-            # Split by comma and parse each part
-            parts = [part.strip() for part in text.split(',')]
-            user_data = {}
-            
-            for part in parts:
-                if ':' in part:
-                    key, value = part.split(':', 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-                    
-                    if key == 'country':
-                        user_data['country'] = value
-                    elif key == 'age':
-                        try:
-                            user_data['age'] = int(value)
-                        except ValueError:
-                            await update.message.reply_text("❌ Age must be a number.")
-                            return
-                    elif key == 'nft':
-                        user_data['nft'] = value if value.lower() != 'none' else None
-            
-            # Store the user data with group ID
-            user_data['group_id'] = group_id
-            data_storage.store_user_registration_data(user.id, user_data)
-            
-            # Show collected data
-            collected_data = f"📝 **Data Collected for {group_name}:**\n"
-            collected_data += f"• Country: {user_data.get('country', 'Not provided')}\n"
-            collected_data += f"• Age: {user_data.get('age', 'Not provided')}\n"
-            collected_data += f"• NFT: {user_data.get('nft', 'None')}\n\n"
-            
-            await update.message.reply_text(collected_data + "Starting verification process...")
-            
-            # Clean up collection state
-            context.user_data.pop(VerificationState.COLLECTING_DATA.value, None)
-            context.user_data.pop('target_group_name', None)
-            
-            # Start verification process
-            await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
-            
-        except Exception as e:
-            logger.error(f"Error processing verification data: {e}")
-            await update.message.reply_text(
-                "❌ Invalid format. Please use:\n"
-                "`Country: [country], Age: [age], NFT: [Penguin/Ape/None]`\n\n"
-                "Example: `Country: USA, Age: 25, NFT: Penguin`"
-            )
     
     @staticmethod
     async def verify_with_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1401,81 +1310,25 @@ class VerificationHandlers:
             await update.message.reply_text("❌ This command only works in private chat.")
             return
         
-        # Check if user provided all data in format: Country: X, Age: Y, NFT: Z, Group: ID
-        if not context.args:
-            # Show available groups instead of requiring group ID
-            await VerificationHandlers._show_verification_help_with_groups(update, context, user)
-            return
-        
-        # Parse the input
-        text = ' '.join(context.args)
-        try:
-            # Split by comma and parse each part
-            parts = [part.strip() for part in text.split(',')]
-            user_data = {}
-            
-            for part in parts:
-                if ':' in part:
-                    key, value = part.split(':', 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-                    
-                    if key == 'country':
-                        user_data['country'] = value
-                    elif key == 'age':
-                        try:
-                            user_data['age'] = int(value)
-                        except ValueError:
-                            await update.message.reply_text("❌ Age must be a number.")
-                            return
-                    elif key == 'nft':
-                        user_data['nft'] = value if value.lower() != 'none' else None
-                    elif key == 'group':
-                        try:
-                            user_data['group_id'] = int(value)
-                        except ValueError:
-                            await update.message.reply_text("❌ Group ID must be a number.")
-                            return
-            
-            # Validate required fields
-            if 'group_id' not in user_data:
-                await update.message.reply_text("❌ Group ID is required.")
-                return
-            
-            group_id = user_data['group_id']
-            
-            # Check if group has verification rules
-            if not verification.has_group_rule(group_id):
-                await update.message.reply_text("✅ This group has no verification requirements. You're all set!")
-                return
-            
-            # Store user data
-            data_storage.store_user_registration_data(user.id, user_data)
-            
-            # Get group info
+        # Check if user provided group ID directly
+        if context.args:
             try:
-                group_chat = await context.bot.get_chat(group_id)
-                group_name = group_chat.title
-            except Exception:
-                group_name = f"Group {group_id}"
-            
-            # Show collected data and start verification
-            collected_data = f"📝 **Registration Data Collected:**\n"
-            collected_data += f"• Country: {user_data.get('country', 'Not provided')}\n"
-            collected_data += f"• Age: {user_data.get('age', 'Not provided')}\n"
-            collected_data += f"• NFT: {user_data.get('nft', 'None')}\n"
-            collected_data += f"• Group: {group_name}\n\n"
-            
-            await update.message.reply_text(collected_data + "Now starting verification process...")
-            
-            # Start verification automatically
-            await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
-            
-        except Exception as e:
-            await update.message.reply_text(
-                "❌ Invalid format. Please use:\n"
-                "`/verify Country: [country], Age: [age], NFT: [Penguin/Ape/None], Group: [group_id]`"
-            )
+                group_id = int(context.args[0])
+                
+                # Check if group has verification rules
+                if not verification.has_group_rule(group_id):
+                    await update.message.reply_text("✅ This group has no verification requirements. You're all set!")
+                    return
+                
+                # Start verification automatically
+                await VerificationHandlers._start_verification_for_group(update, context, user, group_id)
+                return
+            except ValueError:
+                await update.message.reply_text("❌ Invalid group ID. Please provide a valid number.")
+                return
+        
+        # Show available groups instead of requiring group ID
+        await VerificationHandlers._show_verification_help_with_groups(update, context, user)
 
 
 class BotHandlers:

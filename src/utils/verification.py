@@ -123,24 +123,26 @@ class UserVerification:
         requirements = []
         
         if rule.country and rule.country != "None":
-            requirements.append(f"Country: {rule.country}")
+            requirements.append(f"🌍 Country: {rule.country}")
         
         if rule.age and rule.age > 0:
-            requirements.append(f"Minimum age: {rule.age}")
+            requirements.append(f"🎂 Minimum age: {rule.age}")
         
         if rule.nft_holder is not None:
-            if isinstance(rule.nft_holder, str):
-                requirements.append(f"NFT holder: {rule.nft_holder.title()}")
+            if rule.nft_holder is True:
+                requirements.append("🖼️ NFT holder: Any NFT required")
+            elif isinstance(rule.nft_holder, str):
+                requirements.append(f"🖼️ NFT holder: {rule.nft_holder.title()}")
             else:
-                requirements.append(f"NFT holder: {'Yes' if rule.nft_holder else 'No'}")
+                requirements.append("🖼️ NFT holder: Not required")
         
         if rule.collect_address:
-            requirements.append("Wallet address for rewards")
+            requirements.append("💳 Wallet address for rewards")
         
         if not requirements:
             return "No verification requirements set."
         
-        return "Requirements:\n" + "\n".join(f"• {req}" for req in requirements)
+        return "🔧 **Verification Requirements:**\n" + "\n".join(f"• {req}" for req in requirements)
     
     def start_verification_process(self, user_id: int, group_id: int) -> None:
         """Start verification process for user."""

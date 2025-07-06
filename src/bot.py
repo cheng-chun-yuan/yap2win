@@ -1,8 +1,7 @@
 import logging
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ChatMemberHandler, ConversationHandler
 
-from config.config import TOKEN, CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT, ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME
-from handlers.reward_handlers import ENTERING_VERIFICATION_RULES
+from config.config import TOKEN, CHOOSING_GROUP, CHOOSING_TYPE, ENTERING_POOL_AMOUNT, ENTERING_RANK_AMOUNT, ENTERING_RANK_DISTRIBUTION, ENTERING_START_TIME, ENTERING_END_TIME, ENTERING_VERIFICATION_RULES, ENTERING_VERIFICATION_COUNTRY, ENTERING_VERIFICATION_AGE, ENTERING_VERIFICATION_NFT
 from handlers.handlers import AdminHandlers, UserHandlers, BotHandlers, ROFLHandlers, VerificationHandlers
 from handlers.reward_handlers import RewardHandlers
 from handlers.message_handler import message_processor
@@ -57,6 +56,9 @@ set_reward_handler = ConversationHandler(
         ENTERING_START_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_start_time)],
         ENTERING_END_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_end_time)],
         ENTERING_VERIFICATION_RULES: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_verification_rules)],
+        ENTERING_VERIFICATION_COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_verification_country)],
+        ENTERING_VERIFICATION_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_verification_age)],
+        ENTERING_VERIFICATION_NFT: [MessageHandler(filters.TEXT & ~filters.COMMAND, RewardHandlers.enter_verification_nft)],
     },
     fallbacks=[CommandHandler("cancel", RewardHandlers.cancel_reward_setup)],
 )

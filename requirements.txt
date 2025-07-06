@@ -2,6 +2,5 @@ python-telegram-bot
 python-dotenv
 deepeval
 openai
-eth-account
-web3
 httpx
+oasis-sapphire-py

@@ -2,18 +2,13 @@
 Configuration module for the Telegram bot.
 Contains all constants and configuration values.
 """
-
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-# Bot token from environment
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise ValueError("TOKEN environment variable is not set. Please create a .env file with your bot token.")
 
-DEFAULT_POOL_AMOUNT = float(os.getenv("DEFAULT_POOL_AMOUNT", "1.0"))  # Default 1.0 ROSE
+DEFAULT_POOL_AMOUNT = 1  # Default 1.0 ROSE
 
 # Conversation states for set_reward
 CHOOSING_GROUP = 0
@@ -23,6 +18,10 @@ ENTERING_RANK_AMOUNT = 3
 ENTERING_RANK_DISTRIBUTION = 4
 ENTERING_START_TIME = 5
 ENTERING_END_TIME = 6
+ENTERING_VERIFICATION_RULES = 7
+ENTERING_VERIFICATION_COUNTRY = 8
+ENTERING_VERIFICATION_AGE = 9
+ENTERING_VERIFICATION_NFT = 10
 
 # DeepEval LLM-as-a-Judge Scoring Configuration
 MAX_SCORE = 10.0
