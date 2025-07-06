@@ -4,6 +4,7 @@ Command handlers module for the Telegram bot.
 
 import logging
 import time
+import requests
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from enum import Enum
@@ -532,6 +533,21 @@ class VerificationHandlers:
     """Handles verification-related commands."""
     
     @staticmethod
+    def get_self_verification_url() -> str:
+        """Get dynamic Self.xyz verification URL from API."""
+        try:
+            response = requests.get("https://novel-rapidly-panda.ngrok-free.app/api/universallink")
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success") and data.get("universalLink"):
+                    return data["universalLink"]
+        except Exception as e:
+            logger.error(f"Failed to get Self.xyz verification URL: {e}")
+        
+        # Fallback to static URL
+        return "https://redirect.self.xyz?selfApp=%7B%22sessionId%22%3A%22db1bff07-bd53-4685-934e-bb381ca58d23%22%2C%22userIdType%22%3A%22hex%22%2C%22devMode%22%3Afalse%2C%22endpointType%22%3A%22staging_https%22%2C%22header%22%3A%22%22%2C%22logoBase64%22%3A%22https%3A%2F%2Fi.postimg.cc%2FmrmVf9hm%2Fself.png%22%2C%22disclosures%22%3A%7B%22minimumAge%22%3A18%2C%22nationality%22%3Atrue%7D%2C%22chainID%22%3A42220%2C%22version%22%3A2%2C%22userDefinedData%22%3A%22Identity%20Check!%22%2C%22appName%22%3A%22Self%20check%22%2C%22scope%22%3A%22self-check%22%2C%22endpoint%22%3A%22https%3A%2F%2Fnovel-rapidly-panda.ngrok-free.app%22%2C%22userId%22%3A%220000000000000000000000000000000000000000%22%7D"
+    
+    @staticmethod
     def get_verification_state(context: ContextTypes.DEFAULT_TYPE) -> VerificationState:
         """Get current verification state from context."""
         for state in VerificationState:
@@ -1005,22 +1021,36 @@ class VerificationHandlers:
         rule = verification.get_group_rule(group_id)
         
         if step == 'country':
-            # Handle country input (mock version - accept any input matching user's name)
+            # Handle country input - redirect to Self.xyz verification
             if rule.country and rule.country != "None":
-                verification.update_verification_data(user.id, 'country', text)
-                
-                # Mock version: accept if user enters their first name
-                if text.lower() == user.first_name.lower():
-                    await update.message.reply_text("✅ Country verified!")
-                else:
-                    await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
+                # Check if user is awaiting Self.xyz verification
+                pending_data = verification.get_pending_verification(user.id)
+                if not pending_data['data'].get('awaiting_self_verification'):
+                    verification_url = VerificationHandlers.get_self_verification_url()
+                    
+                    await update.message.reply_text(
+                        f"🔍 **Country & Age Verification Required**\n\n"
+                        f"Please click the link below to verify your identity:\n\n"
+                        f"🔗 **Verification Link:**\n{verification_url}\n\n"
+                        f"✅ Click the link above to complete your country and age verification.\n\n"
+                        f"After completing the verification, type 'verified' to continue."
+                    )
+                    
+                    # Store that we're waiting for Self.xyz verification
+                    verification.update_verification_data(user.id, 'awaiting_self_verification', True)
                     return
+                else:
+                    # User has already seen the URL, check if they typed "verified"
+                    if text.lower() == 'verified':
+                        await update.message.reply_text("✅ Country and age verification completed via Self.xyz!")
+                        verification.update_verification_data(user.id, 'country', rule.country)
+                        verification.update_verification_data(user.id, 'age', rule.age if rule.age else 18)
+                    else:
+                        await update.message.reply_text(f"❌ Please type 'verified' after completing the Self.xyz verification, or click the link again if needed.")
+                        return
             
             # Move to next step
-            if rule.age and rule.age > 0:
-                verification.advance_verification_step(user.id, 'age')
-                await update.message.reply_text(f"What is your age? (Must be at least {rule.age})")
-            elif rule.nft_holder is not None:
+            if rule.nft_holder is not None:
                 verification.advance_verification_step(user.id, 'wallet_address')
                 await update.message.reply_text(f"Please provide your wallet address to verify {rule.nft_holder} NFT ownership:")
             elif rule.collect_address:
@@ -1030,20 +1060,32 @@ class VerificationHandlers:
                 await VerificationHandlers._complete_verification(update, context, user)
         
         elif step == 'age':
-            # Handle age input (mock version - accept if user enters their name)
-            try:
-                # Mock version: accept if user enters their first name instead of age
-                if text.lower() == user.first_name.lower():
-                    age = rule.age  # Set to minimum required age
-                    verification.update_verification_data(user.id, 'age', age)
-                    await update.message.reply_text("✅ Age verified!")
-                else:
-                    await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
-                    return
+            # Handle age input - redirect to Self.xyz verification
+            if rule.age and rule.age > 0:
+                # Check if user is awaiting Self.xyz verification
+                pending_data = verification.get_pending_verification(user.id)
+                if not pending_data['data'].get('awaiting_self_verification'):
+                    verification_url = VerificationHandlers.get_self_verification_url()
                     
-            except Exception:
-                await update.message.reply_text(f"❌ For mock version, please enter your name '{user.first_name}' to pass:")
-                return
+                    await update.message.reply_text(
+                        f"🔍 **Age Verification Required**\n\n"
+                        f"Please click the link below to verify your age:\n\n"
+                        f"🔗 **Verification Link:**\n{verification_url}\n\n"
+                        f"✅ Click the link above to complete your age verification.\n\n"
+                        f"After completing the verification, type 'verified' to continue."
+                    )
+                    
+                    # Store that we're waiting for Self.xyz verification
+                    verification.update_verification_data(user.id, 'awaiting_self_verification', True)
+                    return
+                else:
+                    # User has already seen the URL, check if they typed "verified"
+                    if text.lower() == 'verified':
+                        await update.message.reply_text("✅ Age verification completed via Self.xyz!")
+                        verification.update_verification_data(user.id, 'age', rule.age)
+                    else:
+                        await update.message.reply_text(f"❌ Please type 'verified' after completing the Self.xyz verification, or click the link again if needed.")
+                        return
             
             # Move to next step
             if rule.nft_holder is not None:
@@ -1137,11 +1179,29 @@ class VerificationHandlers:
         group_id = pending['group_id']
         rule = verification.get_group_rule(group_id)
         
-        if rule.country and rule.country != "None":
-            await update.message.reply_text(f"What is your country? (Must be {rule.country})")
-        elif rule.age and rule.age > 0:
-            verification.advance_verification_step(user.id, 'age')
-            await update.message.reply_text(f"What is your age? (Must be at least {rule.age})")
+        # Use Self.xyz verification for country and/or age requirements
+        if (rule.country and rule.country != "None") or (rule.age and rule.age > 0):
+            verification_url = VerificationHandlers.get_self_verification_url()
+            
+            requirements = []
+            if rule.country and rule.country != "None":
+                requirements.append(f"Country: {rule.country}")
+            if rule.age and rule.age > 0:
+                requirements.append(f"Minimum age: {rule.age}")
+            
+            requirement_text = " and ".join(requirements)
+            
+            await update.message.reply_text(
+                f"🔍 **Identity Verification Required**\n\n"
+                f"Requirements: {requirement_text}\n\n"
+                f"Please click the link below to verify your identity:\n\n"
+                f"🔗 **Verification Link:**\n{verification_url}\n\n"
+                f"✅ Click the link above to complete your verification.\n\n"
+                f"After completing the verification, type 'verified' to continue."
+            )
+            
+            # Store that we're waiting for Self.xyz verification
+            verification.update_verification_data(user.id, 'awaiting_self_verification', True)
         elif rule.nft_holder is not None:
             verification.advance_verification_step(user.id, 'wallet_address')
             await update.message.reply_text(f"Please provide your wallet address to verify {rule.nft_holder} NFT ownership:")

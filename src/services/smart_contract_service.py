@@ -49,7 +49,13 @@ class SmartContractService:
             logger.info(f"Pool parameters - Name: {pool_name}, Start: {start_timestamp}, End: {end_timestamp}")
             
             # Encode function call
-            function_data = self.contract.encode_abi(['string', 'uint256', 'uint256'], [pool_name, start_timestamp, end_timestamp])
+            function_data = self.contract.functions.createPool(
+                pool_name, start_timestamp, end_timestamp
+            ).build_transaction(
+                {
+                    'gasPrice': self.w3.eth.gas_price,
+                }
+            )
             
             # Convert amount to wei (use user-specified amount)
             amount_wei = int(total_amount * 10**18)
