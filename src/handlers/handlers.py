@@ -8,7 +8,7 @@ import requests
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from enum import Enum
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 
 
 class VerificationState(Enum):
@@ -998,12 +998,14 @@ class VerificationHandlers:
                 if not pending_data['data'].get('awaiting_self_verification'):
                     verification_url = VerificationHandlers.get_self_verification_url()
                     
+                    keyboard = [[InlineKeyboardButton("🔍 Start Verification", url=verification_url)]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
                     await update.message.reply_text(
                         f"🔍 **Country & Age Verification Required**\n\n"
-                        f"Please click the link below to verify your identity:\n\n"
-                        f"🔗 **Verification Link:**\n{verification_url}\n\n"
-                        f"✅ Click the link above to complete your country and age verification.\n\n"
-                        f"After completing the verification, type 'verified' to continue."
+                        f"Please click the button below to verify your identity:\n\n"
+                        f"After completing the verification, type 'verified' to continue.",
+                        reply_markup=reply_markup
                     )
                     
                     # Store that we're waiting for Self.xyz verification
@@ -1161,13 +1163,15 @@ class VerificationHandlers:
             
             requirement_text = " and ".join(requirements)
             
+            keyboard = [[InlineKeyboardButton("🔍 Start Verification", url=verification_url)]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             await update.message.reply_text(
                 f"🔍 **Identity Verification Required**\n\n"
                 f"Requirements: {requirement_text}\n\n"
-                f"Please click the link below to verify your identity:\n\n"
-                f"🔗 **Verification Link:**\n{verification_url}\n\n"
-                f"✅ Click the link above to complete your verification.\n\n"
-                f"After completing the verification, type 'verified' to continue."
+                f"Please click the button below to verify your identity:\n\n"
+                f"After completing the verification, type 'verified' to continue.",
+                reply_markup=reply_markup
             )
             
             # Store that we're waiting for Self.xyz verification

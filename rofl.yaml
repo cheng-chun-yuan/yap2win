@@ -3,8 +3,8 @@ version: 0.1.0
 tee: tdx
 kind: container
 resources:
-  memory: 1024
-  cpus: 2
+  memory: 512
+  cpus: 1
   storage:
     kind: disk-persistent
     size: 1024
@@ -32,8 +32,8 @@ deployments:
           min_tcb_evaluation_data_number: 18
           tdx: {}
       enclaves:
-        - id: GQR1A9YNRyYEgL2hPgN8NNhyfTCYjGMV9cOSaCgKzQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
-        - id: EYe8soH2yGEnSWvRF0GrKXjuWD1bX9wxqpNVH9683R0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: 1vNh8CXcZeLL7QPvfk++oihgodsyKQ/gDNhD39au0TYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
+        - id: mXfVlTBMJGh4tKBtVBx5RgTEB2/U0BcpaVWoy566he4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==
       endorsements:
         - any: {}
       fees: endorsing_node
@@ -47,4 +47,4 @@ deployments:
       default:
         provider: oasis1qp2ens0hsp7gh23wajxa4hpetkdek3swyyulyrmz
         offer: playground_short
-        id: "0000000000000184"
+        id: "0000000000000190"
